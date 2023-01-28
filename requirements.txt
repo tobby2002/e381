@@ -115,8 +115,8 @@ telegram==0.0.1
 tenacity==8.0.1
 tomli==2.0.1
 tornado==6.2
-tox==4.3.3
-tox-pyenv==1.1.0
+tox
+tox-pyenv
 Twisted==22.10.0
 txaio==23.1.1
 typing-extensions==4.4.0
