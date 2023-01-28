@@ -109,7 +109,7 @@ sphinxcontrib-qthelp==1.0.3
 sphinxcontrib-serializinghtml==1.1.5
 sure==1.4.11
 ta==0.8.0
-TA-Lib==0.4.25
+#TA-Lib==0.4.25
 tapy==1.9.1
 telegram==0.0.1
 tenacity==8.0.1
