@@ -1,0 +1,14 @@
+.idea/
+build
+dist
+binance_connector.egg-info/
+__pycache__
+*.pyc
+.tox
+.python-version
+.DS_Store
+venv/
+2023/
+cryptofeed/
+examples/
+phx/
