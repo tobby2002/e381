@@ -86,7 +86,7 @@ pytest-cov==2.8.1
 pytest-pep8==1.0.6
 python-binance==1.0.15
 python-dateutil==2.8.2
-python-telegram-bot==13.13
+python-telegram-bot
 pytz==2021.3
 pytz-deprecation-shim==0.1.0.post0
 PyYAML==6.0
