@@ -28,7 +28,7 @@ cryptography==39.0.0
 cycler==0.11.0
 dateparser==1.1.6
 distlib==0.3.6
-docutils==0.19
+#docutils==0.19
 execnet==1.9.0
 filelock==3.9.0
 flake8==6.0.0
