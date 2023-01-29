@@ -32,7 +32,7 @@ stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 # log를 파일에 출력
-file_handler = logging.FileHandler('n382_longshort_binance_trade.log')
+file_handler = logging.FileHandler('logger.log')
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
@@ -64,11 +64,11 @@ def load_history_pkl():
             logger.info('load_history_pk:' + str(h))
             return h
     except Exception as e:
-        print(e)
+        logger.error(e)
         try:
             os.remove("open_order_history.pkl")
         except Exception as e:
-            print(e)
+            logger.error(e)
         return []
     return []
 
@@ -690,13 +690,15 @@ def blesstrade(df, symbol, fcnt, longshort, df_lows_plot, df_highs_plot, wavepat
                                     }
                                     open_order_history.append(open_order)
                                     print(symbol + ' _NEW order:' + str(open_order))
+
                                     dump_history_pkl()
 
-                                    plot_pattern_m(df=df,
-                                                   wave_pattern=[[1, wavepattern.dates[0], id(wavepattern), wavepattern]],
-                                                   df_lows_plot=df_lows_plot, df_highs_plot=df_highs_plot,
-                                                   trade_info=None, title=str(
-                                            symbol + ' %s ' % str(longshort) + str(current_price)))
+                                    if plotview:
+                                        plot_pattern_m(df=df,
+                                                       wave_pattern=[[1, wavepattern.dates[0], id(wavepattern), wavepattern]],
+                                                       df_lows_plot=df_lows_plot, df_highs_plot=df_highs_plot,
+                                                       trade_info=None, title=str(
+                                                symbol + ' %s ' % str(longshort) + str(current_price)))
 
                                     return
 
@@ -1217,7 +1219,14 @@ if __name__ == '__main__':
 
     symbols = get_symbols()
     i = 1
+    print('i:' + str(i))
+    logger.info('i:' + str(i))
     while True:
+        if i % 10 == 1:
+            print('i:' + str(i))
+            print(f' {i} start: {time.strftime("%H:%M:%S")}')
+            logger.info('i:' + str(i))
+            logger.info(f' {i} start: {time.strftime("%H:%M:%S")}')
         single(symbols, i)
         i += 1
 
