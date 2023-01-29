@@ -6,6 +6,7 @@ $ nohup python -u n382_longshort_binance_trade_v0.2.py > nohup2.out 2>&1 &
 
 $ python filename.py &
 
+
 $ tail -f nohup.out   ---> 빠져나오고 싶으시면 ctrl + z  (not command + z)
 $ top or top &        ---> ctrl + z
 

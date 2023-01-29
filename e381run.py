@@ -788,6 +788,7 @@ def check_has_same_wavepattern(symbol, fcnt, w_l, wavepattern):
 
     return False
 
+
 def rename_symbol(s):
     if s[-4:] == 'USDT':
         return s.replace('USDT', '/USDT')
