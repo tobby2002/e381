@@ -477,15 +477,17 @@ def set_price(symbol, price, longshort):
 def my_available_balance(exchange_symbol):
     response = um_futures_client.balance(recvWindow=6000)
     if exchange_symbol == 'binance_usdt_perp':
-        my_marginable_l = [x['marginAvailable'] for x in response if x['asset'] == 'USDT']
-        my_balance_l = [x['availableBalance'] for x in response if x['asset'] == 'USDT']
-        if len(my_balance_l) == 1:
-            return my_marginable_l[0], my_balance_l[0]
+        my_marginavailable_l = [x['marginAvailable'] for x in response if x['asset'] == 'USDT']
+        my_marginbalance_l = [x['availableBalance'] for x in response if x['asset'] == 'USDT']
+        my_walletbalance_l = [x['walletBalance'] for x in response if x['asset'] == 'USDT']
+        if len(my_marginbalance_l) == 1:
+            return my_marginavailable_l[0], my_marginbalance_l[0], my_walletbalance_l[0]
     elif exchange_symbol == 'binance_busd_perp':
-        my_marginable_l = [x['marginAvailable'] for x in response if x['asset'] == 'BUSD']
-        my_balance_l = [x['availableBalance'] for x in response if x['asset'] == 'BUSD']
-        if len(my_balance_l) == 1:
-            return my_marginable_l[0], my_balance_l[0]
+        my_marginavailable_l = [x['marginAvailable'] for x in response if x['asset'] == 'BUSD']
+        my_marginbalance_l = [x['availableBalance'] for x in response if x['asset'] == 'BUSD']
+        my_walletbalance_l = [x['walletBalance'] for x in response if x['asset'] == 'BUSD']
+        if len(my_marginbalance_l) == 1:
+            return my_marginavailable_l[0], my_marginbalance_l[0], my_walletbalance_l[0]
     return False, 0
 
 
@@ -517,7 +519,7 @@ def get_quantity_step_size_minqty(symbol):
     return stepsize[0], minqty[0]
 
 
-def blesstrade(df, symbol, fcnt, longshort, df_lows_plot, df_highs_plot, wavepattern, idx):
+def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_highs_plot, wavepattern, idx):
     w = wavepattern
     # real condititon by fractal index
     real_condititon1 = True if (fcnt/2 < (w.idx_end - w.idx_start)) and w.idx_start == idx else False
@@ -576,21 +578,35 @@ def blesstrade(df, symbol, fcnt, longshort, df_lows_plot, df_highs_plot, wavepat
 
     if c_active_min_max and c_current_price:
 
-        margin_available, available_balance = my_available_balance(exchange_symbol)
-        max_quantity = float(available_balance) * int(leverage) / current_price
+        margin_available, available_balance, wallet_balance = my_available_balance(exchange_symbol)
 
         if not margin_available:
+            logger.info('margin_available : False')
+            logger.info('symbol:%s, available_balance:%s, wallet_balance:%s' % (symbol, str(available_balance), str(wallet_balance)))
             return
 
-        quantity = max_quantity * qtyrate
+        # max_quantity = float(available_balance) * int(leverage) / current_price
+        # quantity = max_quantity * qtyrate
+
+        max_quantity = float(wallet_balance * qtyrate) * int(leverage) / current_price
+        quantity = max_quantity
+
         step_size, minqty = get_quantity_step_size_minqty(symbol)
         quantity = format_value(quantity, step_size)
 
+        if float(quantity) < float(available_balance):
+            logger.info('float(quantity) < float(available_balance)')
+            logger.info('symbol:%s, available_balance:%s, wallet_balance:%s' % (symbol, str(available_balance), str(wallet_balance)))
+            return
+
         if float(quantity) <= float(minqty)*1.01:
+            logger.info('float(quantity) <= float(minqty)*1.01')
+            logger.info('symbol:%s, available_balance:%s, wallet_balance:%s' % (symbol, str(available_balance), str(wallet_balance)))
             return
 
         if not quantity:
             logger.info('quantity:' + str(quantity))
+            logger.info('available_balance:%s, wallet_balance:%s' % (str(available_balance), str(wallet_balance)))
             return
 
         entry_price = set_price(symbol, entry_price, longshort)
@@ -627,7 +643,6 @@ def blesstrade(df, symbol, fcnt, longshort, df_lows_plot, df_highs_plot, wavepat
 
                     if float(r_query_limit['price']) == float(entry_price) or float(r_query_limit['clientOrderId']) == float(target_price):
                         # and r_query_limit['newClientOrderId'] == target_price:  # when limit order, set newClientOrderId": str(target_price), therefore ..
-                        c_no_double_order = False  # ordering 할 수 없음
                         return
 
         #####  이중 new limit order 방지 로직 start #####
@@ -648,7 +663,6 @@ def blesstrade(df, symbol, fcnt, longshort, df_lows_plot, df_highs_plot, wavepat
             ]
             result_limit = new_batch_order(params)
             for order_limit in result_limit:
-                result_sl = None
                 try:
                     if order_limit['orderId']:
                         # 2. new_order STOP_MARKET
@@ -688,9 +702,10 @@ def blesstrade(df, symbol, fcnt, longshort, df_lows_plot, df_highs_plot, wavepat
                                         'wavepattern': wavepattern,
                                         'data': [order_limit, order_sl]
                                     }
-                                    open_order_history.append(open_order)
-                                    print(symbol + ' _NEW order:' + str(open_order))
 
+                                    # create history NEW
+                                    open_order_history.append(open_order)
+                                    logger.info(symbol + ' _NEW order:' + str(open_order))
                                     dump_history_pkl()
 
                                     if plotview:
@@ -710,13 +725,20 @@ def blesstrade(df, symbol, fcnt, longshort, df_lows_plot, df_highs_plot, wavepat
                                     symbol=symbol, orderIdList=[order_limit['orderId']], origClientOrderIdList=[],
                                     recvWindow=6000
                                 )
+
+                                for order_tp in response:
+                                    try:
+                                        if order_tp['orderId']:
+                                            logger.info(symbol + ' _CANCEL BATCH [LIMIT NEW order by SL FAIL] success')
+                                            return
+                                    except Exception as e:
+                                        logger.error(symbol + ' _CANCEL BATCH [LIMIT NEW order by SL FAIL] error:' + str(e))
                                 return
 
                 except Exception as e:
                     logger.error(symbol + ':' + str(e))
                     logger.error(symbol + ' _LIMIT_new order error, result_limit:' + str(result_limit))
                     return
-        return
     return
 
 
@@ -820,9 +842,7 @@ def loopsymbol(symbol, i):
             idxs = highs_idxs
 
         rules_to_check = list()
-        wavepatterns = set()
-        wavepattern_tpsl_l = []
-        wave_option_plot_l = []
+
         if ('long' in type) and ('short' in type): idxs = sorted(list(set(lows_idxs) | set(highs_idxs)))
         for i in idxs:
             for wave_opt in wave_options.options_sorted:
@@ -847,10 +867,11 @@ def loopsymbol(symbol, i):
                                     if len(open_order_this_symbol) > 0:
                                         open_order_wavepattern = open_order_this_symbol[0]['wavepattern']
 
-                                        # check identical
-                                        c_check_wave_identical = True if (
-                                                                                     open_order_wavepattern.dates == wavepattern.dates) and (
-                                                                                     open_order_wavepattern.values == wavepattern.values) else False
+                                        # check identical check
+                                        c_check_wave_identical = True if (open_order_wavepattern.dates == wavepattern.dates) and (open_order_wavepattern.values == wavepattern.values) else False
+                                        # 2,3,4 wave same check
+                                        c_check_wave_identical_2_3_4 = True if (open_order_wavepattern.dates[2:-2] == wavepattern.dates[2:-2]) and (open_order_wavepattern.values[2:-2] == wavepattern.values[2:-2]) else False
+
                                 c_query_new = False
                                 history_new = [x for x in open_order_history if
                                                (x['symbol'] == symbol and x['status'] == 'NEW')]
@@ -864,15 +885,50 @@ def loopsymbol(symbol, i):
                                         h_sl_orderId = history['sl_orderId']
                                         h_tp_orderId = history['tp_orderId']
 
+                                        r_query_longshort = None
+                                        r_query_status = None
 
                                         if h_limit_orderId:
                                             r_query_limit = um_futures_client.query_order(symbol=symbol,
                                                                                           orderId=h_limit_orderId,
                                                                                           recvWindow=6000)
+
+                                            r_q_longshort = True if r_query_limit['positionSide'] == 'LONG' else False
+                                            r_query_status = r_query_limit['status']
+
                                             if r_query_limit['status'] == 'NEW' or r_query_limit['status'] == 'FILLED':
                                                 c_query_new = True
-                                if not (c_check_wave_identical and c_query_new):
-                                    blesstrade(df_all, symbol, fc, longshort, df_lows_plot, df_highs_plot, wavepattern, i)
+
+
+
+                                # if len(history_new) > 0:
+                                #     for history in history_new:
+                                #         h_id = history['id']
+                                #         h_status = history['status']
+                                #         longshort = history['longshort']
+                                #         h_limit_orderId = history['limit_orderId']
+                                #         h_sl_orderId = history['sl_orderId']
+                                #         h_tp_orderId = history['tp_orderId']
+                                #
+                                #         if h_limit_orderId:
+                                #             r_query_limit = um_futures_client.query_order(symbol=symbol,
+                                #                                                           orderId=h_limit_orderId,
+                                #                                                           recvWindow=6000)
+                                #
+                                #             if r_query_limit['status'] == 'FILLED':
+                                #                 # 대상외
+                                #                 return
+                                #
+                                #             if float(r_query_limit['price']) == float(entry_price) or float(
+                                #                     r_query_limit['clientOrderId']) == float(target_price):
+                                #                 # and r_query_limit['newClientOrderId'] == target_price:  # when limit order, set newClientOrderId": str(target_price), therefore ..
+                                #                 c_no_double_order = False  # ordering 할 수 없음
+                                #                 return
+
+
+                                # if not (c_check_wave_identical and c_query_new):
+                                if not ((c_check_wave_identical or c_check_wave_identical_2_3_4) and c_query_new):
+                                    blesstrade_new_limit_order(df_all, symbol, fc, longshort, df_lows_plot, df_highs_plot, wavepattern, i)
 
     return
 
@@ -889,10 +945,10 @@ def set_tporder_aftercheck_posi_openorderhis(symbol):
     if len(result_position_filtered) > 0:
         # 1. check position (포지션이 있고 매칭 히스토리가 있으면)
         for posi in result_position_filtered:
-            entryprice = posi['entryPrice']
-            positionAmt = abs(float(posi['positionAmt']))
-            positionSide = posi['positionSide']
-            history_matched = [x for x in open_order_history if (x['symbol'] == symbol and x['entry'] == float(entryprice))]
+            p_entryprice = posi['entryPrice']
+            p_positionAmt = abs(float(posi['positionAmt']))
+            p_longshort = True if posi['positionSide'] == 'LONG' else False
+            history_matched = [x for x in open_order_history if (x['symbol'] == symbol and x['entry'] == float(p_entryprice) and x['longshort'] == p_longshort)]
             # 2. check open_order history
             if len(history_matched) > 0:
                 for matched_neworder in history_matched:
@@ -900,9 +956,9 @@ def set_tporder_aftercheck_posi_openorderhis(symbol):
                     h_id = history['id']
                     h_status = history['status']
 
-                    ################################################
-                    # case 1. tp order (조건 tp order조건 : 포지션이 있고 status:NEW 상태)
-                    ################################################
+                    #################################################################
+                    # case 1. tp order (조건 tp order조건 : 포지션이 있고 h_status:NEW 상태)
+                    #################################################################
                     c_status = (h_status == 'NEW')
                     if c_status:
                         longshort = history['longshort']
@@ -910,8 +966,6 @@ def set_tporder_aftercheck_posi_openorderhis(symbol):
                         h_limit_orderId = history['limit_orderId']
                         target = history['target']
                         data = history['data']
-                        # new_client_orderId = "tp_" + str(data[0]['orderId'])  # for cancel after reach stoploss
-                        # new_client_orderId = "tp_11111"  # for cancel after reach stoploss
                         # new_order TAKE_PROFIT
                         # params = [
                         #     {
@@ -934,7 +988,7 @@ def set_tporder_aftercheck_posi_openorderhis(symbol):
                                 "type": "LIMIT",
                                 "positionSide": "LONG" if longshort else "SHORT",
                                 "price": str(target),
-                                "quantity": str(positionAmt),
+                                "quantity": str(p_positionAmt),
                                 "priceProtect": "TRUE",
                                 "timeInForce": "GTC",
                                 "postOnly": "TRUE",
@@ -945,45 +999,38 @@ def set_tporder_aftercheck_posi_openorderhis(symbol):
                         for order_tp in result_tp:
                             try:
                                 if order_tp['orderId']:
-                                    history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
-                                    history_id['status'] = 'DONE'  # update status
-                                    history_id['tp_orderId'] = order_tp['orderId']  # update tp_orderId
-                                    history_id['data'] = history_id['data'].append(order_tp)  # update data
-                                    open_order_history[history_idx] = history_id  # replace history
-                                    dump_history_pkl()
-                                    print(symbol + ' _TAKE_PROFIT success')
-
+                                    update_history_status(open_order_history, symbol, h_id, 'DONE')
+                                    logger.info(symbol + ' _TAKE_PROFIT success')
                                     return True
                             except Exception as e:
-
                                 logger.error(symbol + ' _TAKE_PROFIT error:' + str(e))
-
-                            try:
-                                if order_tp['code'] == -2021:  # [{'code': -2021, 'msg': 'Order would immediately trigger.'}]
-                                    current_price = float(um_futures_client.ticker_price(symbol)['price'])
-                                    compare_price_flg = current_price > target if longshort else current_price < target
-                                    if compare_price_flg:
-                                        order_market = um_futures_client.new_order(
-                                            symbol=symbol,
-                                            side="SELL" if longshort else "BUY",
-                                            positionSide="LONG" if longshort else "SHORT",
-                                            type="MARKET",
-                                            quantity=positionAmt,
-                                            # newClientOrderId=new_client_orderId
-                                        )
-                                        if order_market['orderId']:
-                                            history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
-                                            history_id['status'] = 'MARKET'  # update status
-                                            history_id['tp_orderId'] = order_market['orderId']  # update tp_orderId
-                                            history_id['data'] = order_market['data'].append(order_market)  # update data
-                                            open_order_history[history_idx] = history_id  # replace history
-                                            dump_history_pkl()
-                                            print(symbol + ' _TP MARKET over TP -> success')
-                            except Exception as e:
-                                logger.error(symbol + ' _TP SELL MARKET error:' + str(e))
-
-
-    return False
+                                try:
+                                    if order_tp['code'] == -2021:  # [{'code': -2021, 'msg': 'Order would immediately trigger.'}]
+                                        current_price = float(um_futures_client.ticker_price(symbol)['price'])
+                                        compare_price_flg = current_price > target if longshort else current_price < target
+                                        if compare_price_flg:
+                                            order_market = um_futures_client.new_order(
+                                                symbol=symbol,
+                                                side="SELL" if longshort else "BUY",
+                                                positionSide="LONG" if longshort else "SHORT",
+                                                type="MARKET",
+                                                quantity=p_positionAmt,
+                                                # newClientOrderId=new_client_orderId
+                                            )
+                                            if order_market['orderId']:
+                                                update_history_status(open_order_history, symbol, h_id, 'DONE')
+                                                # history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
+                                                # history_id['status'] = 'MARKET'  # update status
+                                                # history_id['tp_orderId'] = order_market['orderId']  # update tp_orderId
+                                                # history_id['data'] = order_market['data'].append(order_market)  # update data
+                                                # open_order_history[history_idx] = history_id  # replace history
+                                                # dump_history_pkl()
+                                                logger.info(symbol + ' _TP MARKET over TP -> success')
+                                                return
+                                except Exception as e:
+                                    logger.error(symbol + ' _TP SELL MARKET error:' + str(e))
+                                    return
+    return
 
 def cancel_batch_order(symbol, orderIdList):
     try:
@@ -1003,117 +1050,6 @@ def cancel_batch_order(symbol, orderIdList):
         logger.error(symbol + ' _cancel_batch_order Exception error:' + str(e))
         return False
 
-def set_draw_by_beyond_or_done_by_sl(symbol):
-    #########################################################################
-    # case 1. DRAW BY beyond 처리 (조건 history status: NEW AND  query_status limit:NEW , query_status sl:NEW)
-    #########################################################################
-    history_new = [x for x in open_order_history if (x['symbol'] == symbol and x['status'] == 'NEW')]
-    if len(history_new) > 0:
-        for history in history_new:
-            h_id = history['id']
-            h_status = history['status']
-            longshort = history['longshort']
-            h_limit_orderId = history['limit_orderId']
-            h_sl_orderId = history['sl_orderId']
-            h_tp_orderId = history['tp_orderId']
-            if h_limit_orderId:
-                r_query_limit = um_futures_client.query_order(symbol=symbol, orderId=h_limit_orderId, recvWindow=6000)
-            if h_sl_orderId:
-                r_query_sl = um_futures_client.query_order(symbol=symbol, orderId=h_sl_orderId, recvWindow=6000)
-            if h_tp_orderId:
-                r_query_tp = um_futures_client.query_order(symbol=symbol, orderId=h_tp_orderId, recvWindow=6000)
-
-            if r_query_limit['status'] == 'NEW' and r_query_sl['status'] == 'NEW':
-                ###################
-                # need beyond check
-                ###################
-                w = history['wavepattern']
-                delta = (10 * fcnt[0] + 1)
-                df = get_fetch_dohlcv(symbol,
-                                      interval=(str(timeframe) + 'm'),
-                                      limit=delta)
-
-                w_start_price = w.values[0]  # wave1
-                w_end_price = w.values[-1]  # wave5
-                height_price = abs(w_end_price - w_start_price)
-                o_fibo_value = height_price * o_fibo / 100 if o_fibo else 0
-                # entry_price = w.values[7]  # wave4
-
-                entry_price = w.values[0] + height_price * entry_fibo if longshort else w.values[
-                                                                                            0] - height_price * entry_fibo  # 0.05
-                wave5_datetime = w.dates[-1]
-                # df_active = df[w.idx_end + 1:]
-                df_active = df.loc[df['Date'] > wave5_datetime]
-
-                try:
-                    active_max_value = max(df_active.High.tolist(), default=w_end_price)
-                    active_min_value = min(df_active.Low.tolist(), default=w_end_price)
-                except Exception as e:
-                    print('active_max_value:' + str(e))
-                    return
-
-                c_active_min_max = (active_min_value > entry_price and active_max_value < (w_end_price + o_fibo_value)) \
-                    if longshort else \
-                    (active_max_value < entry_price and active_min_value > (w_end_price - o_fibo_value))
-                if not c_active_min_max:
-                    # cancel
-                    response = um_futures_client.cancel_batch_order(
-                        symbol=symbol, orderIdList=[str(h_limit_orderId),
-                                                    str(h_sl_orderId)
-                                                    ], origClientOrderIdList=[],
-                        recvWindow=6000
-                    )
-
-                    history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
-                    history_id['status'] = 'DRAW'  # update status
-                    open_order_history[history_idx] = history_id  # update history
-                    dump_history_pkl()
-                    print(symbol + ' _cancel DRAW open_orders by beyond')
-                    logger.info(symbol + ' _cancel DRAW open_orders by beyond')
-                    return True
-
-    ##########################################################
-    # case 2. DONE BY STOP LOSS (history status: TAKE_POSITION AND check query_status each)
-    ##########################################################
-    history_tp = [x for x in open_order_history if (x['symbol'] == symbol and x['status'] == 'TAKE_PROFIT')]
-    if len(history_tp) > 0:
-        for history in history_tp:
-            h_id = history['id']
-            h_status = history['status']
-            h_limit_orderId = history['limit_orderId']
-            h_sl_orderId = history['sl_orderId']
-            h_tp_orderId = history['tp_orderId']
-            orderIdList = []
-
-            if h_limit_orderId:
-                r_query_limit = um_futures_client.query_order(symbol=symbol, orderId=h_limit_orderId, recvWindow=6000)
-                if r_query_limit['status'] == 'FILLED':
-                    r_query_sl = um_futures_client.query_order(symbol=symbol, orderId=h_sl_orderId, recvWindow=6000)
-                    r_query_tp = um_futures_client.query_order(symbol=symbol, orderId=h_tp_orderId, recvWindow=6000)
-                    if r_query_sl['status'] == 'NEW' and r_query_tp['status'] == 'FILLED':
-                        orderIdList = [str(h_sl_orderId)]
-                    if r_query_sl['status'] == 'FILLED' and r_query_tp['status'] == 'NEW':
-                        orderIdList = [str(h_tp_orderId)]
-
-                    if len(orderIdList) > 0:
-                        try:
-                            response = um_futures_client.cancel_batch_order(
-                                symbol=symbol, orderIdList=orderIdList, origClientOrderIdList=[],
-                                recvWindow=6000
-                            )
-                            if len(response) > 0:
-                                try:
-                                    if response[0]['orderId']:
-                                        update_history_status(open_order_history, symbol, h_id, 'DONE')
-                                        return True
-                                except Exception as e:
-                                    if response[0]['code']:
-                                        logger.error(symbol + ' _cancel_batch_order error:' + str(response[0]['msg']))
-
-                        except Exception as e:
-                            logger.error(symbol + ' _cancel_batch_order Exception error:' + str(e))
-                            return False
-    return False
 
 def update_history_status(open_order_history, symbol, h_id, new_status):
     history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
@@ -1124,29 +1060,33 @@ def update_history_status(open_order_history, symbol, h_id, new_status):
     dump_history_pkl()
 
 
-def set_done_status_manager_about_history_NEW_OR_TAKEPROFIT(symbol):
-    history_new = [x for x in open_order_history if
+def set_status_manager_when_new_or_tp(symbol):
+    history_new_tp = [x for x in open_order_history if
                    (x['symbol'] == symbol and (x['status'] == 'NEW' or x['status'] == 'TAKE_PROFIT'))]
 
-    if len(history_new) > 0:
-        for history in history_new:
+    if len(history_new_tp) > 0:
+        for history in history_new_tp:
             h_id = history['id']
             h_status = history['status']
             longshort = history['longshort']
             h_limit_orderId = history['limit_orderId']
             h_sl_orderId = history['sl_orderId']
             h_tp_orderId = history['tp_orderId']
+
+
             r_query_limit = um_futures_client.query_order(symbol=symbol,
                                                           orderId=h_limit_orderId,
                                                           recvWindow=6000)
             r_query_sl = um_futures_client.query_order(symbol=symbol,
                                                           orderId=h_sl_orderId,
                                                           recvWindow=6000)
+            # CASE TP
             if h_tp_orderId:
                 r_query_tp = um_futures_client.query_order(symbol=symbol,
                                                               orderId=h_tp_orderId,
                                                               recvWindow=6000)
                 if r_query_limit['status'] == 'FILLED' and r_query_sl['status'] == 'NEW' and r_query_tp['status'] == 'NEW':
+                    # TODO check ordering zone check 만일 벗어나면 모두 취소 후 다시 리오더링 할 것
                     return
                 if r_query_limit['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED' and r_query_tp['status'] == 'EXPIRED':
                     update_history_status(open_order_history, symbol, h_id, 'DONE')
@@ -1156,15 +1096,56 @@ def set_done_status_manager_about_history_NEW_OR_TAKEPROFIT(symbol):
                     if success_cancel:
                         update_history_status(open_order_history, symbol, h_id, 'DONE')
                     return
+            # CASE NO TP
             else:
                 if r_query_limit['status'] == 'NEW' and r_query_sl['status'] == 'NEW':
+                    ###################
+                    # need beyond check
+                    ###################
+                    w = history['wavepattern']
+                    delta = (10 * fcnt[0] + 1)
+                    df = get_fetch_dohlcv(symbol,
+                                          interval=(str(timeframe) + 'm'),
+                                          limit=delta)
+
+                    w_start_price = w.values[0]  # wave1
+                    w_end_price = w.values[-1]  # wave5
+                    height_price = abs(w_end_price - w_start_price)
+                    o_fibo_value = height_price * o_fibo / 100 if o_fibo else 0
+                    # entry_price = w.values[7]  # wave4
+
+                    entry_price = w.values[0] + height_price * entry_fibo if longshort else w.values[
+                                                                                                0] - height_price * entry_fibo  # 0.05
+                    wave5_datetime = w.dates[-1]
+                    # df_active = df[w.idx_end + 1:]
+                    df_active = df.loc[df['Date'] > wave5_datetime]
+
+                    try:
+                        active_max_value = max(df_active.High.tolist(), default=w_end_price)
+                        active_min_value = min(df_active.Low.tolist(), default=w_end_price)
+                    except Exception as e:
+                        logger.error('active_max_value:' + str(e))
+                        return
+
+                    c_active_min_max = (
+                                active_min_value > entry_price and active_max_value < (w_end_price + o_fibo_value)) \
+                        if longshort else \
+                        (active_max_value < entry_price and active_min_value > (w_end_price - o_fibo_value))
+                    if not c_active_min_max:
+                        success_cancel = cancel_batch_order(symbol, [str(h_limit_orderId),
+                                                        str(h_sl_orderId)])
+                        if success_cancel:
+                            update_history_status(open_order_history, symbol, h_id, 'DRAW')
+                            return
                     return
                 if r_query_limit['status'] == 'FILLED' and r_query_sl['status'] == 'NEW':
+                    success_cancel = cancel_batch_order(symbol, [h_sl_orderId])
+                    if success_cancel:
+                        update_history_status(open_order_history, symbol, h_id, 'DONE')
                     return
                 if r_query_limit['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED':
                     update_history_status(open_order_history, symbol, h_id, 'DONE')
                     return
-
 
 
 def single(symbols, i, *args):
@@ -1172,8 +1153,7 @@ def single(symbols, i, *args):
     for symbol in symbols:
         try:
             if len(open_order_history) > 0:
-                set_done_status_manager_about_history_NEW_OR_TAKEPROFIT(symbol)
-                set_draw_by_beyond_or_done_by_sl(symbol)
+                set_status_manager_when_new_or_tp(symbol)
                 set_tporder_aftercheck_posi_openorderhis(symbol)
             loopsymbol(symbol, i)
         except Exception as e:
@@ -1181,6 +1161,7 @@ def single(symbols, i, *args):
             print(e)
     # print(f' {i} end: {time.strftime("%H:%M:%S")}')
     return
+
 
 def set_leverage_allsymbol(symbols, leverage):
     logger.info('set  x %s leverage start' % str(leverage))
