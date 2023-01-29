@@ -479,15 +479,15 @@ def my_available_balance(exchange_symbol):
     if exchange_symbol == 'binance_usdt_perp':
         my_marginavailable_l = [x['marginAvailable'] for x in response if x['asset'] == 'USDT']
         my_marginbalance_l = [x['availableBalance'] for x in response if x['asset'] == 'USDT']
-        my_walletbalance_l = [x['walletBalance'] for x in response if x['asset'] == 'USDT']
+        my_walletbalance_l = [x['balance'] for x in response if x['asset'] == 'USDT']
         if len(my_marginbalance_l) == 1:
-            return my_marginavailable_l[0], my_marginbalance_l[0], my_walletbalance_l[0]
+            return my_marginavailable_l[0], float(my_marginbalance_l[0]), float(my_walletbalance_l[0])
     elif exchange_symbol == 'binance_busd_perp':
         my_marginavailable_l = [x['marginAvailable'] for x in response if x['asset'] == 'BUSD']
         my_marginbalance_l = [x['availableBalance'] for x in response if x['asset'] == 'BUSD']
-        my_walletbalance_l = [x['walletBalance'] for x in response if x['asset'] == 'BUSD']
+        my_walletbalance_l = [x['balance'] for x in response if x['asset'] == 'BUSD']
         if len(my_marginbalance_l) == 1:
-            return my_marginavailable_l[0], my_marginbalance_l[0], my_walletbalance_l[0]
+            return my_marginavailable_l[0], float(my_marginbalance_l[0]), float(my_walletbalance_l[0])
     return False, 0
 
 
@@ -588,18 +588,18 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
         # max_quantity = float(available_balance) * int(leverage) / current_price
         # quantity = max_quantity * qtyrate
 
-        max_quantity = float(wallet_balance * qtyrate) * int(leverage) / current_price
+        max_quantity = wallet_balance * qtyrate * int(leverage) / current_price
         quantity = max_quantity
 
         step_size, minqty = get_quantity_step_size_minqty(symbol)
         quantity = format_value(quantity, step_size)
 
-        if float(quantity) < float(available_balance):
-            logger.info('float(quantity) < float(available_balance)')
+        if available_balance <= wallet_balance * qtyrate:
+            logger.info('available_balance <= wallet_balance * qtyrate')
             logger.info('symbol:%s, available_balance:%s, wallet_balance:%s' % (symbol, str(available_balance), str(wallet_balance)))
             return
 
-        if float(quantity) <= float(minqty)*1.01:
+        if float(quantity) <= float(minqty):
             logger.info('float(quantity) <= float(minqty)*1.01')
             logger.info('symbol:%s, available_balance:%s, wallet_balance:%s' % (symbol, str(available_balance), str(wallet_balance)))
             return
@@ -826,7 +826,6 @@ def loopsymbol(symbol, i):
     highs_idxs = list()
     df_lows_plot = None
     df_highs_plot = None
-    trade_flg = None
     for fc in fcnt:
         if 'long' in type:
             df_lows = fractals_low_loopA(df_all, fcnt=fc, loop_count=loop_count)
@@ -863,6 +862,7 @@ def loopsymbol(symbol, i):
                             if wavepattern.check_rule(rule):
 
                                 c_check_wave_identical = False
+                                c_check_wave_identical_2_3_4 = False
                                 if len(open_order_history) > 0:
                                     open_order_this_symbol = [x for x in open_order_history if x['symbol'] == symbol]
                                     if len(open_order_this_symbol) > 0:
@@ -1159,7 +1159,7 @@ def single(symbols, i, *args):
             loopsymbol(symbol, i)
         except Exception as e:
             logger.error("ERROR in single:" + str(e))
-            print(e)
+            print("ERROR in single:" + str(e))
     # print(f' {i} end: {time.strftime("%H:%M:%S")}')
     return
 
@@ -1195,20 +1195,16 @@ if __name__ == '__main__':
 
     """)
     print_condition()
-    set_leverage_allsymbol(symbols_binance_futures, leverage)
+    # set_leverage_allsymbol(symbols_binance_futures, leverage)
 
     start = time.perf_counter()
 
     symbols = get_symbols()
     i = 1
-    print('i:' + str(i))
-    logger.info('i:' + str(i))
     while True:
         if i % 10 == 1:
-            print('i:' + str(i))
-            print(f' {i} start: {time.strftime("%H:%M:%S")}')
-            logger.info('i:' + str(i))
-            logger.info(f' {i} start: {time.strftime("%H:%M:%S")}')
+            print(f'{i} start: {time.strftime("%H:%M:%S")}')
+            logger.info(f'{i} start: {time.strftime("%H:%M:%S")}')
         single(symbols, i)
         i += 1
 
