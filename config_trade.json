@@ -1,8 +1,8 @@
 {
   "default": {
-    "_exchange": "bybit_usdt_perp, binance_usdt_perp, binance_busd_perp",
+    "_exchange": "bybit_usdt_perp, binance_usdt_perp, binance_busd_perp binance_busd_perp",
     "exchange": "BINANCE",
-    "exchange_symbol": "binance_busd_perp",
+    "exchange_symbol": "binance_usdt_perp",
     "futures": true,
     "_trade_type": "[long, short] or [long] or [short]",
     "type": ["long","short"],
@@ -25,7 +25,7 @@
     "low_target_w2": false,
 
     "_period": ["period_days_ago:30 --> 30 days ago", "period_days_ago_till:0 --> now", "period_interval:1 per 1day"],
-    "timeframe": 5,
+    "timeframe": 15,
     "period_days_ago": 1,
     "period_days_ago_till": 0,
     "period_interval": 2,
