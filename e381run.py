@@ -1140,9 +1140,9 @@ def set_status_manager_when_new_or_tp(symbol):
                             return
                     return
                 if r_query_limit['status'] == 'FILLED' and r_query_sl['status'] == 'NEW':
-                    success_cancel = cancel_batch_order(symbol, [h_sl_orderId])
-                    if success_cancel:
-                        update_history_status(open_order_history, symbol, h_id, 'DONE')
+                    # success_cancel = cancel_batch_order(symbol, [h_sl_orderId])
+                    # if success_cancel:
+                    #     update_history_status(open_order_history, symbol, h_id, 'DONE')
                     return
                 if r_query_limit['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED':
                     update_history_status(open_order_history, symbol, h_id, 'DONE')
