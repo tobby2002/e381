@@ -998,9 +998,7 @@ def set_tporder_aftercheck_posi_openorderhis(symbol):
                                                                                    orderId=h_limit_orderId,
                                                                                    recvWindow=6000)
                                         if r_query_limit_after['status'] == 'FILLED':
-                                            success_cancel = cancel_batch_order(symbol, [h_sl_orderId])
-                                            if success_cancel:
-                                                update_history_status(open_order_history, symbol, h_id, 'DONE')
+                                            pass
                                         return True
                                 except Exception as e:
                                     logger.error(symbol + ' _TAKE_PROFIT error:' + str(e))
@@ -1131,6 +1129,11 @@ def update_history_status(open_order_history, symbol, h_id, new_status):
     logger.info(symbol + ' _update history to new status:%s' % new_status)
     dump_history_pkl()
 
+def delete_history_status(open_order_history, symbol, h_id, event):
+    history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
+    open_order_history.pop(history_idx)
+    print(symbol + ' _delete history by %s' % event)
+    dump_history_pkl()
 
 def set_status_manager_when_new_or_tp(symbol):
     history_new_tp = [x for x in open_order_history if
@@ -1160,12 +1163,14 @@ def set_status_manager_when_new_or_tp(symbol):
                 if r_query_limit['status'] == 'FILLED' and r_query_sl['status'] == 'NEW' and r_query_tp['status'] == 'NEW':
                     return
                 if r_query_limit['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED' and r_query_tp['status'] == 'EXPIRED':
-                    update_history_status(open_order_history, symbol, h_id, 'DONE')
+                    # update_history_status(open_order_history, symbol, h_id, 'DONE')
+                    delete_history_status(open_order_history, symbol, h_id, 'F-F-E')
                     return
                 if r_query_limit['status'] == 'FILLED' and r_query_sl['status'] == 'NEW' and r_query_tp['status'] == 'FILLED':
                     success_cancel = cancel_batch_order(symbol, [h_sl_orderId])
                     if success_cancel:
-                        update_history_status(open_order_history, symbol, h_id, 'DONE')
+                        # update_history_status(open_order_history, symbol, h_id, 'DONE')
+                        delete_history_status(open_order_history, symbol, h_id, 'F-N-F')
                     return
             # CASE NO TP
             else:
@@ -1187,8 +1192,8 @@ def set_status_manager_when_new_or_tp(symbol):
                         # OUTZONE
                         success_cancel = cancel_batch_order(symbol, [r_query_limit['orderId'], h_sl_orderId])
                         if success_cancel:
-                            update_history_status(open_order_history, symbol, h_id, 'OUTZONE')
-                        pass
+                            # update_history_status(open_order_history, symbol, h_id, 'OUTZONE')
+                            delete_history_status(open_order_history, symbol, h_id, 'N-N-OUTZONE')
 
                     ###################
                     # case2. beyond
@@ -1226,7 +1231,8 @@ def set_status_manager_when_new_or_tp(symbol):
                         success_cancel = cancel_batch_order(symbol, [str(h_limit_orderId),
                                                         str(h_sl_orderId)])
                         if success_cancel:
-                            update_history_status(open_order_history, symbol, h_id, 'BEYOND')
+                            # update_history_status(open_order_history, symbol, h_id, 'BEYOND')
+                            delete_history_status(open_order_history, symbol, h_id, 'N-N-BEYOND')
                             return
                     return
 
@@ -1234,20 +1240,19 @@ def set_status_manager_when_new_or_tp(symbol):
 
                     result_position = um_futures_client.get_position_risk(symbol=symbol, recvWindow=6000)
                     result_position_filtered = [x for x in result_position if x['entryPrice'] != '0.0']
-                    if len(result_position_filtered) == 0:
-                        # 1. check position (포지션이 없으면)
+                    if len(result_position_filtered) == 0:  # no position
                         success_cancel = cancel_batch_order(symbol, [str(h_sl_orderId)])
                         if success_cancel:
-                            update_history_status(open_order_history, symbol, h_id, 'DONE')
+                            delete_history_status(open_order_history, symbol, h_id, 'F-N-DONE')
                             return
                     return
                 if r_query_limit['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED':
-                    update_history_status(open_order_history, symbol, h_id, 'DONE')
+                    # update_history_status(open_order_history, symbol, h_id, 'DONE')
+                    delete_history_status(open_order_history, symbol, h_id, 'F-F-DONE')
                     return
 
 
 def single(symbols, i, *args):
-    # print(f' {i} start: {time.strftime("%H:%M:%S")}')
     for symbol in symbols:
         try:
             if len(open_order_history) > 0:
@@ -1298,9 +1303,9 @@ if __name__ == '__main__':
 
     symbols = get_symbols()
     i = 1
+    logger.info('PID:' + str(os.getpid()))
     while True:
         if i % 10 == 1:
-            print(f'{i} start: {time.strftime("%H:%M:%S")}')
             logger.info(f'{i} start: {time.strftime("%H:%M:%S")}')
         single(symbols, i)
         i += 1
