@@ -900,33 +900,6 @@ def loopsymbol(symbol, i):
                                             if r_query_limit['status'] == 'NEW' or r_query_limit['status'] == 'FILLED':
                                                 c_query_new = True
 
-
-
-                                # if len(history_new) > 0:
-                                #     for history in history_new:
-                                #         h_id = history['id']
-                                #         h_status = history['status']
-                                #         longshort = history['longshort']
-                                #         h_limit_orderId = history['limit_orderId']
-                                #         h_sl_orderId = history['sl_orderId']
-                                #         h_tp_orderId = history['tp_orderId']
-                                #
-                                #         if h_limit_orderId:
-                                #             r_query_limit = um_futures_client.query_order(symbol=symbol,
-                                #                                                           orderId=h_limit_orderId,
-                                #                                                           recvWindow=6000)
-                                #
-                                #             if r_query_limit['status'] == 'FILLED':
-                                #                 # 대상외
-                                #                 return
-                                #
-                                #             if float(r_query_limit['price']) == float(entry_price) or float(
-                                #                     r_query_limit['clientOrderId']) == float(target_price):
-                                #                 # and r_query_limit['newClientOrderId'] == target_price:  # when limit order, set newClientOrderId": str(target_price), therefore ..
-                                #                 c_no_double_order = False  # ordering 할 수 없음
-                                #                 return
-
-
                                 # if not (c_check_wave_identical and c_query_new):
                                 if not ((c_check_wave_identical or c_check_wave_identical_2_3_4) and c_query_new):
                                     blesstrade_new_limit_order(df_all, symbol, fc, longshort, df_lows_plot, df_highs_plot, wavepattern, i)
@@ -940,167 +913,106 @@ def get_i_r(list, key, value):
     return None, None
 
 
-def set_tporder_aftercheck_posi_openorderhis(symbol):
-    result_position = um_futures_client.get_position_risk(symbol=symbol, recvWindow=6000)
-    result_position_filtered = [x for x in result_position if x['entryPrice'] != '0.0']
-    if len(result_position_filtered) > 0:
-        # 1. check position (포지션이 있고 매칭 히스토리가 있으면)
-        for posi in result_position_filtered:
-            p_entryprice = posi['entryPrice']
-            p_positionAmt = abs(float(posi['positionAmt']))
-            p_longshort = True if posi['positionSide'] == 'LONG' else False
-            history_matched = [x for x in open_order_history if (x['symbol'] == symbol and x['entry'] == float(p_entryprice) and x['longshort'] == p_longshort)]
-            # 2. check open_order history
-            if len(history_matched) > 0:
-                for matched_neworder in history_matched:
-                    history = matched_neworder
-                    h_id = history['id']
-                    h_status = history['status']
-                    target = history['target']
-                    longshort = history['longshort']
-                    h_limit_orderId = history['limit_orderId']
-                    h_sl_orderId = history['sl_orderId']
+def new_tp_order(symbol, longshort, target, quantity, limit_orderId):
+    params = [
+        {
+            "symbol": symbol,
+            "side": "SELL" if longshort else "BUY",
+            "type": "LIMIT",
+            "positionSide": "LONG" if longshort else "SHORT",
+            "price": str(target),
+            "quantity": str(quantity),
+            "priceProtect": "TRUE",
+            "timeInForce": "GTC",
+            "postOnly": "TRUE",
+            "newClientOrderId": 'tp_' + str(limit_orderId)
+        }
+    ]
+    result_tp = new_batch_order(params)
+    for order_tp in result_tp:
+        try:
+            if order_tp['orderId']:
+                logger.info(symbol + ' _TAKE_PROFIT new order success')
+                # find history limit order and update it
+                history_matched = [x for x in open_order_history if (x['symbol'] == symbol and x['limit_orderId'] == float(limit_orderId))]
+                if len(history_matched) > 0:
+                    h_id = history_matched[0]['id']
+                    update_history_status(open_order_history, symbol, h_id, 'TAKE_PROFIT')
+                return True
+        except Exception as e:
+            try:
+                if order_tp['code'] == -2021:  # [{'code': -2021, 'msg': 'Order would immediately trigger.'}]
+                    current_price = float(um_futures_client.ticker_price(symbol)['price'])
+                    compare_price_flg = current_price > target if longshort else current_price < target
+                    if compare_price_flg:
+                        order_market = um_futures_client.new_order(
+                            symbol=symbol,
+                            side="SELL" if longshort else "BUY",
+                            positionSide="LONG" if longshort else "SHORT",
+                            type="MARKET",
+                            quantity=quantity,
+                            newClientOrderId="tp_" + str(limit_orderId)
+                        )
+                        if order_market['orderId']:
+                            logger.info(symbol + ' _TP MARKET over TP -> success')
+                            # find history limit order and update it
+                            history_matched = [x for x in open_order_history if
+                                               (x['symbol'] == symbol and x['limit_orderId'] == float(limit_orderId))]
+                            if len(history_matched) > 0:
+                                h_id = history_matched[0]['id']
+                                update_history_status(open_order_history, symbol, h_id, 'DONE')
+                            return True
+                pass
+            except Exception as e:
+                logger.error(symbol + ' _TP SELL MARKET error:' + str(e))
+
+            logger.error(symbol + ' _TAKE_PROFIT Exception error:' + str(e))
+            return False
+    return False
 
 
-                    #################################################################
-                    # case 1. tp order (조건 tp order조건 : 포지션이 있고 h_status: DONE 상태)
-                    #################################################################
+def set_tp_by_api_allorders(symbol):
+    try:
+        all_orders = um_futures_client.get_all_orders(symbol=symbol, recvWindow=6000)
+        new_sles = [x for x in all_orders if (x['status'] == 'NEW' and x['type'] == 'STOP_MARKET')]
+        if len(new_sles) > 0:
+            for new_sl in new_sles:
+                sl_orderId = new_sl['orderId']
+                longshort = True if new_sl['positionSide'] == 'LONG' else False
+                limit_orderId = new_sl['clientOrderId'][3:]  # trace limit's orderId by 'sl_limitOrderId'
 
-                    if h_status == 'DONE':
-                        r_query_sl = um_futures_client.query_order(symbol=symbol,
-                                                                   orderId=h_sl_orderId,
-                                                                   recvWindow=6000)
-                        if float(r_query_sl['stopPrice']) == float(history['sl_price']):
-                            # set tp
+                # 1. check limit status
+                r_query_limit = um_futures_client.query_order(symbol=symbol,
+                                                              orderId=limit_orderId,
+                                                              recvWindow=6000)
+                if r_query_limit['status'] == 'FILLED':
+                    target_price = r_query_limit['clientOrderId']  # target_price
+                    quantity = r_query_limit['executedQty']  # target_price
 
-                            params = [
-                                {
-                                    "symbol": symbol,
-                                    "side": "SELL" if longshort else "BUY",
-                                    "type": "LIMIT",
-                                    "positionSide": "LONG" if longshort else "SHORT",
-                                    "price": str(target),
-                                    "quantity": str(p_positionAmt),
-                                    "priceProtect": "TRUE",
-                                    "timeInForce": "GTC",
-                                    "postOnly": "TRUE",
-                                    "newClientOrderId": str(h_limit_orderId)
-                                }
-                            ]
-                            result_tp = new_batch_order(params)
-                            for order_tp in result_tp:
-                                try:
-                                    if order_tp['orderId']:
-                                        update_history_status(open_order_history, symbol, h_id, 'DONE')
-                                        logger.info(symbol + ' _TAKE_PROFIT success')
+                    # 2. check if there is TP or TP's status with this origClientOrderId
+                    try:
+                        r_query_tp = um_futures_client.query_order(symbol=symbol,
+                                                                      origClientOrderId='tp_' + limit_orderId,
+                                                                      recvWindow=6000)
+                        if len(r_query_tp) > 0:
+                            if r_query_tp['status'] == 'FILLED':
+                                # force cancel sl
+                                success_cancel = cancel_batch_order(symbol, [sl_orderId])
+                                if success_cancel:
+                                    history_matched = [x for x in open_order_history if (
+                                                x['symbol'] == symbol and x['limit_orderId'] == float(limit_orderId))]
+                                    if len(history_matched) > 0:
+                                        h_id = history_matched[0]['id']
+                                        delete_history_status(open_order_history, symbol, h_id, 'TP_FILLED')
 
-                                        r_query_limit_after = um_futures_client.query_order(symbol=symbol,
-                                                                                   orderId=h_limit_orderId,
-                                                                                   recvWindow=6000)
-                                        if r_query_limit_after['status'] == 'FILLED':
-                                            pass
-                                        return True
-                                except Exception as e:
-                                    logger.error(symbol + ' _TAKE_PROFIT error:' + str(e))
-                                    try:
-                                        if order_tp[
-                                            'code'] == -2021:  # [{'code': -2021, 'msg': 'Order would immediately trigger.'}]
-                                            current_price = float(um_futures_client.ticker_price(symbol)['price'])
-                                            compare_price_flg = current_price > target if longshort else current_price < target
-                                            if compare_price_flg:
-                                                order_market = um_futures_client.new_order(
-                                                    symbol=symbol,
-                                                    side="SELL" if longshort else "BUY",
-                                                    positionSide="LONG" if longshort else "SHORT",
-                                                    type="MARKET",
-                                                    quantity=p_positionAmt,
-                                                    # newClientOrderId=new_client_orderId
-                                                )
-                                                if order_market['orderId']:
-                                                    update_history_status(open_order_history, symbol, h_id, 'DONE')
-                                                    # history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
-                                                    # history_id['status'] = 'MARKET'  # update status
-                                                    # history_id['tp_orderId'] = order_market['orderId']  # update tp_orderId
-                                                    # history_id['data'] = order_market['data'].append(order_market)  # update data
-                                                    # open_order_history[history_idx] = history_id  # replace history
-                                                    # dump_history_pkl()
-                                                    logger.info(symbol + ' _TP MARKET over TP -> success')
-                                                    return
-                                    except Exception as e:
-                                        logger.error(symbol + ' _TP SELL MARKET error:' + str(e))
-                                        return
-
-
-
-                    #################################################################
-                    # case 1. tp order (조건 tp order조건 : 포지션이 있고 h_status:NEW 상태)
-                    #################################################################
-                    c_status = (h_status == 'NEW')
-                    if c_status:
-                        longshort = history['longshort']
-                        entry = history['entry']
-                        h_limit_orderId = history['limit_orderId']
-                        target = history['target']
-                        data = history['data']
-                        # new_order TAKE_PROFIT
-                        # params = [
-                        #     {
-                        #         "symbol": symbol,
-                        #         "side": "SELL" if longshort else "BUY",
-                        #         "type": "TAKE_PROFIT",
-                        #         "positionSide": "LONG" if longshort else "SHORT",
-                        #         "price": str(entry),
-                        #         "quantity": str(positionAmt),
-                        #         "stopPrice": str(target),
-                        #         "priceProtect": "TRUE",
-                        #         "timeInForce": "GTC",
-                        #         # "newClientOrderId": new_client_orderId,
-                        #     }
-                        # ]
-                        params = [
-                            {
-                                "symbol": symbol,
-                                "side": "SELL" if longshort else "BUY",
-                                "type": "LIMIT",
-                                "positionSide": "LONG" if longshort else "SHORT",
-                                "price": str(target),
-                                "quantity": str(p_positionAmt),
-                                "priceProtect": "TRUE",
-                                "timeInForce": "GTC",
-                                "postOnly": "TRUE",
-                                "newClientOrderId": str(h_limit_orderId)
-                            }
-                        ]
-                        result_tp = new_batch_order(params)
-                        for order_tp in result_tp:
-                            try:
-                                if order_tp['orderId']:
-                                    update_history_status(open_order_history, symbol, h_id, 'DONE')
-                                    logger.info(symbol + ' _TAKE_PROFIT success')
-                                    return True
-                            except Exception as e:
-                                logger.error(symbol + ' _TAKE_PROFIT error:' + str(e))
-                                try:
-                                    if order_tp['code'] == -2021:  # [{'code': -2021, 'msg': 'Order would immediately trigger.'}]
-                                        current_price = float(um_futures_client.ticker_price(symbol)['price'])
-                                        compare_price_flg = current_price > target if longshort else current_price < target
-                                        if compare_price_flg:
-                                            order_market = um_futures_client.new_order(
-                                                symbol=symbol,
-                                                side="SELL" if longshort else "BUY",
-                                                positionSide="LONG" if longshort else "SHORT",
-                                                type="MARKET",
-                                                quantity=p_positionAmt,
-                                                # newClientOrderId=new_client_orderId
-                                            )
-                                            if order_market['orderId']:
-                                                update_history_status(open_order_history, symbol, h_id, 'DONE')
-                                                logger.info(symbol + ' _TP MARKET over TP -> success')
-                                                return
-                                except Exception as e:
-                                    logger.error(symbol + ' _TP SELL MARKET error:' + str(e))
-                                    return
-    return
+                    except ClientError as error:
+                        success = new_tp_order(symbol, longshort, target_price, quantity, limit_orderId)
+    except Exception as e:
+        logging.error(
+            "Found set_tp_by_api_allorders error. symbol: {}, status: {}, error code: {}, error message: {}".format(
+                symbol, e.status_code, e.error_code, e.error_message
+            )
+        )
 
 def cancel_batch_order(symbol, orderIdList):
     try:
@@ -1119,6 +1031,7 @@ def cancel_batch_order(symbol, orderIdList):
     except Exception as e:
         logger.error(symbol + ' _cancel_batch_order Exception error:' + str(e))
         return False
+    return False
 
 
 def update_history_status(open_order_history, symbol, h_id, new_status):
@@ -1255,9 +1168,9 @@ def set_status_manager_when_new_or_tp(symbol):
 def single(symbols, i, *args):
     for symbol in symbols:
         try:
+            set_tp_by_api_allorders(symbol)
             if len(open_order_history) > 0:
                 set_status_manager_when_new_or_tp(symbol)
-                set_tporder_aftercheck_posi_openorderhis(symbol)
             loopsymbol(symbol, i)
         except Exception as e:
             logger.error("ERROR in single:" + str(e))
