@@ -641,7 +641,7 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
                         # 대상외
                         return
 
-                    if float(r_query_limit['price']) == float(entry_price) or float(r_query_limit['clientOrderId']) == float(target_price):
+                    if float(r_query_limit['price']) == float(entry_price) or float(r_query_limit['clientOrderId'].split('_')[2]) == float(target_price):
                         # and r_query_limit['newClientOrderId'] == target_price:  # when limit order, set newClientOrderId": str(target_price), therefore ..
                         return
 
@@ -1114,7 +1114,7 @@ def set_status_manager_when_new_or_tp(symbol):
                     # case1. outzone
                     ###################
                     entry_price = float(r_query_limit['price'])
-                    target_price = float(r_query_limit['clientOrderId'])
+                    target_price = float(r_query_limit['clientOrderId'].split('_')[2])
 
                     half_entry_target = entry_price + abs(
                         target_price - entry_price) / 2 if longshort else entry_price - abs(
