@@ -1023,7 +1023,7 @@ def monitoring_orders_positions(symbol):
                                                               orderId=limit_orderId,
                                                               recvWindow=6000)
                 if r_query_limit['status'] == 'FILLED':
-                    target_price = r_query_limit['clientOrderId']  # target_price
+                    target_price = r_query_limit['clientOrderId'].split('_')[2]  # target_price
                     quantity = r_query_limit['executedQty']  # target_price
 
                     # 2. check if there is TP or TP's status with this origClientOrderId
