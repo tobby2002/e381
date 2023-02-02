@@ -599,8 +599,9 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
             # logger.info('symbol:%s, available_balance:%s, wallet_balance:%s' % (symbol, str(available_balance), str(wallet_balance)))
             return
 
-        if float(quantity) <= float(minqty):
-            logger.info('float(quantity) <= float(minqty)*1.01')
+        if float(quantity) < float(minqty):
+            logger.info('float(quantity) <= float(minqty)')
+            logger.info('symbol:%s, quantity:%s, minqty:%s' % (symbol, str(quantity), str(minqty)))
             logger.info('symbol:%s, available_balance:%s, wallet_balance:%s' % (symbol, str(available_balance), str(wallet_balance)))
             return
 
@@ -738,7 +739,18 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
                 except Exception as e:
                     logger.error(symbol + ':' + str(e))
                     logger.error(symbol + ' _LIMIT_new order error, result_limit:' + str(result_limit))
-                    return
+
+                    response = um_futures_client.cancel_batch_order(
+                        symbol=symbol, orderIdList=[order_limit['orderId']], origClientOrderIdList=[],
+                        recvWindow=6000
+                    )
+
+                    for order_tp in response:
+                        try:
+                            if order_tp['orderId']:
+                                logger.info(symbol + ' _CANCEL BATCH [LIMIT NEW order by Exception] success')
+                        except Exception as e:
+                            logger.error(symbol + ' _CANCEL BATCH [LIMIT NEW order by Exception] error:' + str(e))
     return
 
 
@@ -934,10 +946,7 @@ def new_tp_order(symbol, longshort, target, quantity, limit_orderId):
             if order_tp['orderId']:
                 logger.info(symbol + ' _TAKE_PROFIT new order success')
                 # find history limit order and update it
-                history_matched = [x for x in open_order_history if (x['symbol'] == symbol and x['limit_orderId'] == float(limit_orderId))]
-                if len(history_matched) > 0:
-                    h_id = history_matched[0]['id']
-                    update_history_status(open_order_history, symbol, h_id, 'TAKE_PROFIT')
+                update_history_by_limit_id(open_order_history, symbol, 'TAKE_PROFIT', limit_orderId)
                 return True
         except Exception as e:
             try:
@@ -956,11 +965,7 @@ def new_tp_order(symbol, longshort, target, quantity, limit_orderId):
                         if order_market['orderId']:
                             logger.info(symbol + ' _TP MARKET over TP -> success')
                             # find history limit order and update it
-                            history_matched = [x for x in open_order_history if
-                                               (x['symbol'] == symbol and x['limit_orderId'] == float(limit_orderId))]
-                            if len(history_matched) > 0:
-                                h_id = history_matched[0]['id']
-                                update_history_status(open_order_history, symbol, h_id, 'DONE')
+                            update_history_by_limit_id(open_order_history, symbol, 'DONE', limit_orderId)
                             return True
                 pass
             except Exception as e:
@@ -1000,6 +1005,13 @@ def update_history_status(open_order_history, symbol, h_id, new_status):
     dump_history_pkl()
 
 
+def update_history_by_limit_id(open_order_history, symbol, description, limit_orderId):
+    history_matched = [x for x in open_order_history if
+                       (x['symbol'] == symbol and x['limit_orderId'] == float(limit_orderId))]
+    if len(history_matched) > 0:
+        h_id = history_matched[0]['id']
+        update_history_status(open_order_history, symbol, h_id, description)
+
 def delete_history_status(open_order_history, symbol, h_id, event):
     history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
     open_order_history.pop(history_idx)
@@ -1036,11 +1048,8 @@ def monitoring_orders_positions(symbol):
                                 # force cancel sl
                                 success_cancel = cancel_batch_order(symbol, [sl_orderId])
                                 if success_cancel:
-                                    history_matched = [x for x in open_order_history if (
-                                                x['symbol'] == symbol and x['limit_orderId'] == float(limit_orderId))]
-                                    if len(history_matched) > 0:
-                                        h_id = history_matched[0]['id']
-                                        delete_history_status(open_order_history, symbol, h_id, 'TP_FILLED')
+                                    update_history_by_limit_id(open_order_history, symbol, 'TP_FILLED', limit_orderId)
+
 
                     except ClientError as error:
                         success = new_tp_order(symbol, longshort, target_price, quantity, limit_orderId)
@@ -1055,13 +1064,25 @@ def monitoring_orders_positions(symbol):
             result_position_filtered = [x for x in result_position if x['entryPrice'] != '0.0']
             if len(result_position_filtered) > 0:  # 2. if in position
                 for p in result_position_filtered:
-                    limit_orderId = p['orderId']
-                    success_cancel = cancel_batch_order(symbol, [str(limit_orderId)])
-                    if success_cancel:
-                        logger.info(symbol + 'FORCE CANCEL BY ONLY POSI WITH NO SL_TP' + str(p))
-                        # delete_history_status(open_order_history, symbol, h_id, 'F-N-DONE')
-                        return
-            return
+                    all_orders = um_futures_client.get_all_orders(symbol=symbol, recvWindow=6000)
+                    filled_limits = [x for x in all_orders if (x['status'] == 'FILLED' and x['type'] == 'LIMIT' and x['price'] == p['entryPrice'])]
+                    if len(filled_limits) > 0:
+                        limit_orderId = filled_limits[0]['orderId']
+                        longshort = True if filled_limits[0]['positionSide'] == 'LONG' else False
+                        quantity = p['positionAmt']
+                        order_market = um_futures_client.new_order(
+                            symbol=symbol,
+                            side="SELL" if longshort else "BUY",
+                            positionSide="LONG" if longshort else "SHORT",
+                            type="MARKET",
+                            quantity=quantity,
+                            newClientOrderId="tp_" + str(limit_orderId)
+                        )
+                        if order_market['orderId']:
+                            logger.info(symbol + ' FORCE MARKET BY ONLY POSI WITH NO SL_TP' + str(p))
+                            # find history limit order and update it
+                            update_history_by_limit_id(open_order_history, symbol, 'DONE', limit_orderId)
+
     except Exception as e:
         logging.error(
             "Found monitoring_orders_positions error. symbol: {}, status: {}, error code: {}, error message: {}".format(
@@ -1166,7 +1187,6 @@ def set_status_manager_when_new_or_tp(symbol):
                         success_cancel = cancel_batch_order(symbol, [str(h_limit_orderId),
                                                         str(h_sl_orderId)])
                         if success_cancel:
-                            # update_history_status(open_order_history, symbol, h_id, 'BEYOND')
                             delete_history_status(open_order_history, symbol, h_id, 'N-N-BEYOND')
                             return
                     return
@@ -1182,7 +1202,6 @@ def set_status_manager_when_new_or_tp(symbol):
                             return
                     return
                 if r_query_limit['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED':
-                    # update_history_status(open_order_history, symbol, h_id, 'DONE')
                     delete_history_status(open_order_history, symbol, h_id, 'F-F-DONE')
                     return
 
