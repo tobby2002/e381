@@ -658,7 +658,7 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
                     "quantity": str(quantity),
                     "timeInForce": "GTC",
                     "price": str(entry_price),
-                    "newClientOrderId": str(target_price),
+                    "newClientOrderId": 'limit_' + str(sl_price) + '_' + str(target_price),
                 }
             ]
             result_limit = new_batch_order(params)
@@ -971,8 +971,45 @@ def new_tp_order(symbol, longshort, target, quantity, limit_orderId):
     return False
 
 
-def set_tp_by_api_allorders(symbol):
+def cancel_batch_order(symbol, orderIdList):
     try:
+        response = um_futures_client.cancel_batch_order(
+            symbol=symbol, orderIdList=orderIdList, origClientOrderIdList=[],
+            recvWindow=6000
+        )
+        if len(response) > 0:
+            try:
+                if response[0]['orderId']:
+                    return True
+            except Exception as e:
+                if response[0]['code']:
+                    logger.error(symbol + ' _cancel_batch_order error:' + str(response[0]['msg']))
+                    return False
+    except Exception as e:
+        logger.error(symbol + ' _cancel_batch_order Exception error:' + str(e))
+        return False
+    return False
+
+
+def update_history_status(open_order_history, symbol, h_id, new_status):
+    history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
+    history_id['status'] = new_status  # update new status
+    open_order_history[history_idx] = history_id  # replace history
+    print(symbol + ' _update history to new status:%s' % new_status)
+    logger.info(symbol + ' _update history to new status:%s' % new_status)
+    dump_history_pkl()
+
+
+def delete_history_status(open_order_history, symbol, h_id, event):
+    history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
+    open_order_history.pop(history_idx)
+    print(symbol + ' _delete history by %s' % event)
+    dump_history_pkl()
+
+
+def monitoring_orders_positions(symbol):
+    try:
+        # 1. check orders
         all_orders = um_futures_client.get_all_orders(symbol=symbol, recvWindow=6000)
         new_sles = [x for x in all_orders if (x['status'] == 'NEW' and x['type'] == 'STOP_MARKET')]
         if len(new_sles) > 0:
@@ -1007,46 +1044,31 @@ def set_tp_by_api_allorders(symbol):
 
                     except ClientError as error:
                         success = new_tp_order(symbol, longshort, target_price, quantity, limit_orderId)
+                    except Exception as e:
+                        logging.error(
+                            "Found monitoring_orders_positions/r_query_tp error. symbol: {}, status: {}, error code: {}, error message: {}".format(
+                                symbol, e.status_code, e.error_code, e.error_message
+                            )
+                        )
+        else:
+            result_position = um_futures_client.get_position_risk(symbol=symbol, recvWindow=6000)
+            result_position_filtered = [x for x in result_position if x['entryPrice'] != '0.0']
+            if len(result_position_filtered) > 0:  # 2. if in position
+                for p in result_position_filtered:
+                    limit_orderId = p['orderId']
+                    success_cancel = cancel_batch_order(symbol, [str(limit_orderId)])
+                    if success_cancel:
+                        logger.info(symbol + 'FORCE CANCEL BY ONLY POSI WITH NO SL_TP' + str(p))
+                        # delete_history_status(open_order_history, symbol, h_id, 'F-N-DONE')
+                        return
+            return
     except Exception as e:
         logging.error(
-            "Found set_tp_by_api_allorders error. symbol: {}, status: {}, error code: {}, error message: {}".format(
+            "Found monitoring_orders_positions error. symbol: {}, status: {}, error code: {}, error message: {}".format(
                 symbol, e.status_code, e.error_code, e.error_message
             )
         )
 
-def cancel_batch_order(symbol, orderIdList):
-    try:
-        response = um_futures_client.cancel_batch_order(
-            symbol=symbol, orderIdList=orderIdList, origClientOrderIdList=[],
-            recvWindow=6000
-        )
-        if len(response) > 0:
-            try:
-                if response[0]['orderId']:
-                    return True
-            except Exception as e:
-                if response[0]['code']:
-                    logger.error(symbol + ' _cancel_batch_order error:' + str(response[0]['msg']))
-                    return False
-    except Exception as e:
-        logger.error(symbol + ' _cancel_batch_order Exception error:' + str(e))
-        return False
-    return False
-
-
-def update_history_status(open_order_history, symbol, h_id, new_status):
-    history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
-    history_id['status'] = new_status  # update new status
-    open_order_history[history_idx] = history_id  # replace history
-    print(symbol + ' _update history to new status:%s' % new_status)
-    logger.info(symbol + ' _update history to new status:%s' % new_status)
-    dump_history_pkl()
-
-def delete_history_status(open_order_history, symbol, h_id, event):
-    history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
-    open_order_history.pop(history_idx)
-    print(symbol + ' _delete history by %s' % event)
-    dump_history_pkl()
 
 def set_status_manager_when_new_or_tp(symbol):
     history_new_tp = [x for x in open_order_history if
@@ -1168,7 +1190,7 @@ def set_status_manager_when_new_or_tp(symbol):
 def single(symbols, i, *args):
     for symbol in symbols:
         try:
-            set_tp_by_api_allorders(symbol)
+            monitoring_orders_positions(symbol)
             if len(open_order_history) > 0:
                 set_status_manager_when_new_or_tp(symbol)
             loopsymbol(symbol, i)
