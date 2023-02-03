@@ -1267,7 +1267,7 @@ if __name__ == '__main__':
 
     """)
     print_condition()
-    set_leverage_allsymbol(symbols_binance_futures, leverage)
+    # set_leverage_allsymbol(symbols_binance_futures, leverage)
 
     start = time.perf_counter()
 
