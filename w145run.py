@@ -222,6 +222,7 @@ symbols = list()
 symbols_binance_futures = []
 symbols_binance_futures_USDT = []
 symbols_binance_futures_BUSD = []
+symbols_binance_futures_USDT_BUSD = []
 
 symbols_binace_info = client.futures_exchange_info()
 
@@ -229,8 +230,10 @@ allsymbols = symbols_binace_info['symbols']
 for s in allsymbols:
     if s['contractType'] == 'PERPETUAL' and s['symbol'][-4:] == 'USDT':
         symbols_binance_futures_USDT.append(s['symbol'])
+        symbols_binance_futures_USDT_BUSD.append(s['symbol'])
     elif s['contractType'] == 'PERPETUAL' and s['symbol'][-4:] == 'BUSD':
         symbols_binance_futures_BUSD.append(s['symbol'])
+        symbols_binance_futures_USDT_BUSD.append(s['symbol'])
     symbols_binance_futures.append(s['symbol'])
 
 def get_symbols():
@@ -240,6 +243,8 @@ def get_symbols():
         symbols = symbols_binance_futures_USDT
     elif exchange_symbol == 'binance_busd_perp':
         symbols = symbols_binance_futures_BUSD
+    elif exchange_symbol == 'binance_usdt_busd_perp':
+        symbols = symbols_binance_futures_USDT_BUSD
 
     if symbol_last:
         symbols = symbols[symbol_last:]
@@ -315,7 +320,7 @@ def get_historical_ohlc_data_start_end(symbol, start_int, end_int, past_days=Non
         else:
             end_date_str = None
         try:
-            if exchange_symbol == 'binance_usdt_perp' or exchange_symbol == 'binance_busd_perp':
+            if exchange_symbol == 'binance_usdt_perp' or exchange_symbol == 'binance_busd_perp' or exchange_symbol == 'binance_usdt_busd_perp':
                 if futures:
                     D = pd.DataFrame(
                         client.futures_historical_klines(symbol=symbol, start_str=start_date_str, end_str=end_date_str, interval=interval))
@@ -1262,7 +1267,7 @@ if __name__ == '__main__':
 
     """)
     print_condition()
-    # set_leverage_allsymbol(symbols_binance_futures, leverage)
+    set_leverage_allsymbol(symbols_binance_futures, leverage)
 
     start = time.perf_counter()
 
