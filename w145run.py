@@ -694,6 +694,7 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
                                 "stopPrice": str(sl_price),
                                 "priceProtect": "TRUE",
                                 "closePosition": "TRUE",
+                                "workingType": "CONTRACT_PRICE",
                                 "newClientOrderId": "sl_" + str(order_limit['orderId']),
                             }
                         ]
@@ -953,6 +954,7 @@ def new_tp_order(symbol, longshort, target, quantity, limit_orderId):
             "priceProtect": "TRUE",
             "timeInForce": "GTC",
             "postOnly": "TRUE",
+            "workingType": "CONTRACT_PRICE",
             "newClientOrderId": 'tp_' + str(limit_orderId)
         }
     ]
@@ -1055,50 +1057,50 @@ def monitoring_orders_positions(symbol):
                     quantity = r_query_limit['executedQty']  # target_price
 
                     # 2. check if there is TP or TP's status with this origClientOrderId
-                    try:
-                        r_query_tp = um_futures_client.query_order(symbol=symbol,
-                                                                      origClientOrderId='tp_' + limit_orderId,
-                                                                      recvWindow=6000)
-                        if len(r_query_tp) > 0:
-                            if r_query_tp['status'] == 'FILLED':
-                                # force cancel sl
-                                success_cancel = cancel_batch_order(symbol, [sl_orderId])
-                                if success_cancel:
-                                    update_history_by_limit_id(open_order_history, symbol, 'TP_FILLED', limit_orderId)
-
-
-                    except ClientError as error:
-                        success = new_tp_order(symbol, longshort, target_price, quantity, limit_orderId)
-                    except Exception as e:
-                        logging.error(
-                            "Found monitoring_orders_positions/r_query_tp error. symbol: {}, status: {}, error code: {}, error message: {}".format(
-                                symbol, e.status_code, e.error_code, e.error_message
+                    key = 'clientOrderId'
+                    value = 'tp_' + limit_orderId
+                    tp_index, tp_order = get_i_r(all_orders, key, value)
+                    if tp_index:
+                        if tp_order['status'] == 'FILLED':
+                            # force cancel sl
+                            success_cancel = cancel_batch_order(symbol, [sl_orderId])
+                            if success_cancel:
+                                update_history_by_limit_id(open_order_history, symbol, 'TP_FILLED', limit_orderId)
+                    else:
+                        try:
+                            success = new_tp_order(symbol, longshort, target_price, quantity, limit_orderId)
+                        except Exception as e:
+                            logging.error(
+                                "Found monitoring_orders_positions/r_query_tp error. symbol: {}, status: {}, error code: {}, error message: {}".format(
+                                    symbol, e.status_code, e.error_code, e.error_message
+                                )
                             )
-                        )
-        else:
-            result_position = um_futures_client.get_position_risk(symbol=symbol, recvWindow=6000)
-            result_position_filtered = [x for x in result_position if x['entryPrice'] != '0.0']
-            if len(result_position_filtered) > 0:  # 2. if in position
-                for p in result_position_filtered:
-                    all_orders = um_futures_client.get_all_orders(symbol=symbol, recvWindow=6000)
-                    filled_limits = [x for x in all_orders if (x['status'] == 'FILLED' and x['type'] == 'LIMIT' and x['price'] == p['entryPrice'])]
-                    if len(filled_limits) > 0:
-                        limit_orderId = filled_limits[0]['orderId']
-                        longshort = True if filled_limits[0]['positionSide'] == 'LONG' else False
-                        quantity = p['positionAmt']
-                        order_market = um_futures_client.new_order(
-                            symbol=symbol,
-                            side="SELL" if longshort else "BUY",
-                            positionSide="LONG" if longshort else "SHORT",
-                            type="MARKET",
-                            quantity=quantity,
-                            newClientOrderId="tp_" + str(limit_orderId)
-                        )
-                        if order_market['orderId']:
-                            logger.info(symbol + ' FORCE MARKET BY ONLY POSI WITH NO SL_TP' + str(p))
-                            # find history limit order and update it
-                            update_history_by_limit_id(open_order_history, symbol, 'DONE', limit_orderId)
 
+                            result_position = um_futures_client.get_position_risk(symbol=symbol, recvWindow=6000)
+                            result_position_filtered = [x for x in result_position if x['entryPrice'] != '0.0']
+                            if len(result_position_filtered) > 0:  # 2. if in position
+                                for p in result_position_filtered:
+                                    all_orders = um_futures_client.get_all_orders(symbol=symbol, recvWindow=6000)
+                                    filled_limits = [x for x in all_orders if (
+                                                x['status'] == 'FILLED' and x['type'] == 'LIMIT' and x['price'] == p[
+                                            'entryPrice'])]
+                                    if len(filled_limits) > 0:
+                                        limit_orderId = filled_limits[0]['orderId']
+                                        longshort = True if filled_limits[0]['positionSide'] == 'LONG' else False
+                                        quantity = p['positionAmt']
+                                        order_market = um_futures_client.new_order(
+                                            symbol=symbol,
+                                            side="SELL" if longshort else "BUY",
+                                            positionSide="LONG" if longshort else "SHORT",
+                                            type="MARKET",
+                                            quantity=quantity,
+                                            newClientOrderId="tp_" + str(limit_orderId)
+                                        )
+                                        if order_market['orderId']:
+                                            logger.info(symbol + ' FORCE MARKET BY ONLY POSI WITH NO SL_TP' + str(p))
+                                            # find history limit order and update it
+                                            update_history_by_limit_id(open_order_history, symbol, 'DONE',
+                                                                       limit_orderId)
     except Exception as e:
         logging.error(
             "Found monitoring_orders_positions error. symbol: {}, status: {}, error code: {}, error message: {}".format(
