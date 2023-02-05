@@ -612,8 +612,8 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
         quantity = format_value(quantity, step_size)
 
         if available_balance <= wallet_balance * qtyrate:
-            # logger.info('available_balance <= wallet_balance * qtyrate')
-            # logger.info('symbol:%s, available_balance:%s, wallet_balance:%s' % (symbol, str(available_balance), str(wallet_balance)))
+            logger.info('available_balance <= wallet_balance * qtyrate')
+            logger.info('symbol:%s, available_balance:%s, wallet_balance:%s' % (symbol, str(available_balance), str(wallet_balance)))
             return
 
         if float(quantity) < float(minqty):
