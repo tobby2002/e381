@@ -604,7 +604,8 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
         # max_quantity = float(available_balance) * int(leverage) / current_price
         # quantity = max_quantity * qtyrate
 
-        max_quantity = wallet_balance * qtyrate * int(leverage) / current_price
+        # max_quantity = wallet_balance * qtyrate * int(leverage) / current_price
+        max_quantity = wallet_balance * qtyrate / current_price
         quantity = max_quantity
 
         step_size, minqty = get_quantity_step_size_minqty(symbol)
@@ -1241,18 +1242,23 @@ def single(symbols, i, *args):
 def set_leverage_allsymbol(symbols, leverage):
     logger.info('set  x %s leverage start' % str(leverage))
     for symbol in symbols:
-        try:
-            response = um_futures_client.change_leverage(
-                symbol=symbol, leverage=leverage, recvWindow=6000
-            )
-            time.sleep(0.1)
-            # logger.info(response)
-        except ClientError as error:
-            logger.error(
-                "Found error. status: {}, error code: {}, error message: {}".format(
-                    error.status_code, error.error_code, error.error_message
+        tryleverage = leverage
+        while True:
+            try:
+                response = um_futures_client.change_leverage(
+                    symbol=symbol, leverage=tryleverage, recvWindow=6000
                 )
-            )
+                time.sleep(0.1)
+                logger.info(response)
+                break
+            except ClientError as error:
+                tryleverage = tryleverage - 4
+                logger.error(
+                    "Found error. status: {}, error code: {}, error message: {}".format(
+                        error.status_code, error.error_code, error.error_message
+                    )
+                )
+
     logger.info('set  x %s leverage done' % str(leverage))
 
 if __name__ == '__main__':
@@ -1269,7 +1275,7 @@ if __name__ == '__main__':
 
     """)
     print_condition()
-    # set_leverage_allsymbol(symbols_binance_futures, leverage)
+    set_leverage_allsymbol(symbols_binance_futures, leverage)
 
     start = time.perf_counter()
 
