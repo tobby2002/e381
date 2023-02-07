@@ -20,6 +20,7 @@ import pytz
 import json
 import logging
 
+seq = str(random.randint(10000, 99999))
 # 로그 생성
 logger = logging.getLogger()
 # 로그의 출력 기준 설정
@@ -32,7 +33,7 @@ stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 # log를 파일에 출력
-file_handler = logging.FileHandler('logger.log')
+file_handler = logging.FileHandler('logger_%s.log' % seq)
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
@@ -57,16 +58,20 @@ open_order_history = [
     # {'id':'1234567890.1234', 'symbol': 'BTCUSDT', 'wavepattern': wavepattern, 'entry':'10000', 'target':'10381', 'status':'NEW' 'data': [{'orderId': 1300759837, 'symbol': 'WOOUSDT', 'status': 'NEW', 'clientOrderId': 'waveshortlimit001', 'price': '0.21310', 'avgPrice': '0.00000', 'origQty': '30', 'executedQty': '0', 'cumQty': '0', 'cumQuote': '0', 'timeInForce': 'GTC', 'type': 'LIMIT', 'reduceOnly': False, 'closePosition': False, 'side': 'SELL', 'positionSide': 'SHORT', 'stopPrice': '0', 'workingType': 'CONTRACT_PRICE', 'priceProtect': False, 'origType': 'LIMIT', 'updateTime': 1674269613350}, {'orderId': 1300759838, 'symbol': 'WOOUSDT', 'status': 'NEW', 'clientOrderId': 'waveshortlimit001sl', 'price': '0', 'avgPrice': '0.00000', 'origQty': '30', 'executedQty': '0', 'cumQty': '0', 'cumQuote': '0', 'timeInForce': 'GTC', 'type': 'STOP_MARKET', 'reduceOnly': True, 'closePosition': False, 'side': 'BUY', 'positionSide': 'SHORT', 'stopPrice': '0.22103', 'workingType': 'CONTRACT_PRICE', 'priceProtect': False, 'origType': 'STOP_MARKET', 'updateTime': 1674269613350}]}
 ]
 import os
+import random
+
+open_order_history_seq = 'oohistory_' + seq + '.pkl'
+
 def load_history_pkl():
     try:
-        with open('open_order_history.pkl', 'rb') as f:
+        with open(open_order_history_seq, 'rb') as f:
             h = pickle.load(f)
             logger.info('load_history_pk:' + str(h))
             return h
     except Exception as e:
         logger.error(e)
         try:
-            os.remove("open_order_history.pkl")
+            os.remove(open_order_history_seq)
         except Exception as e:
             logger.error(e)
         return []
@@ -76,8 +81,7 @@ open_order_history = load_history_pkl()
 
 def dump_history_pkl():
     try:
-        with open('open_order_history.pkl', 'wb') as f:
-            # print('dump_history_pkl')
+        with open(open_order_history_seq, 'wb') as f:
             pickle.dump(open_order_history, f)
     except Exception as e:
         logger.error(e)
@@ -100,8 +104,6 @@ low_target_w2 = config['default']['low_target_w2']
 
 seed = config['default']['seed']
 fee = config['default']['fee']
-fee_maker = config['default']['fee_maker']
-fee_taker = config['default']['fee_taker']
 fee_slippage = config['default']['fee_slippage']
 
 period_days_ago = config['default']['period_days_ago']
@@ -153,23 +155,7 @@ def print_condition():
     logger.info('qtyrate:%s' % str(qtyrate))
     logger.info('seed:%s' % str(seed))
     logger.info('fee:%s%%' % str(fee*100))
-    logger.info('fee_maker:%s%%' % str(fee_maker*100))
-    logger.info('fee_taker:%s%%' % str(fee_taker*100))
     logger.info('fee_slippage:%s%%' % str(round(fee_slippage*100, 4)))
-    if futures:
-        fee_maker_maker = (fee_maker + fee_maker) * leverage  # fee_maker buy:0.02%(0.0002) sell:0.02%(0.0002), sleepage:0.01%(0.0001)
-        logger.info('(fee_maker_maker:%s%%' % round(float(fee_maker_maker)*100, 4))
-
-        fee_maker_taker_slippage = (fee_maker + fee_taker + fee_slippage) * leverage  # fee_maker buy:0.02%(0.0002) sell:0.02%(0.0002), sleepage:0.01%(0.0001)
-        logger.info('(fee_maker_taker_slippage:%s%%' % round(float(fee_maker_taker_slippage)*100, 4))
-
-    else:
-        fee_maker_maker = (fee_maker + fee_maker) * leverage  # fee_maker buy:0.02%(0.0002) sell:0.02%(0.0002), sleepage:0.01%(0.0001)
-        logger.info('(fee_maker_maker:%s%%' % round(float(fee_maker_maker)*100, 4))
-
-        fee_maker_taker_slippage = (fee_maker + fee_taker + fee_slippage) * leverage  # fee_maker buy:0.02%(0.0002) sell:0.02%(0.0002), sleepage:0.01%(0.0001)
-        logger.info('(fee_maker_taker_slippage:%s%%' % round(float(fee_maker_taker_slippage)*100, 4))
-
     logger.info('timeframe: %s' % timeframe)
     logger.info('period_days_ago: %s' % period_days_ago)
     logger.info('period_days_ago_till: %s' % period_days_ago_till)
@@ -224,10 +210,10 @@ symbols_binance_futures_USDT = []
 symbols_binance_futures_BUSD = []
 symbols_binance_futures_USDT_BUSD = []
 
-symbols_binace_info = client.futures_exchange_info()
+exchange_info = client.futures_exchange_info()
 
-allsymbols = symbols_binace_info['symbols']
-for s in allsymbols:
+
+for s in exchange_info['symbols']:
     if s['contractType'] == 'PERPETUAL' and s['symbol'][-4:] == 'USDT':
         symbols_binance_futures_USDT.append(s['symbol'])
         symbols_binance_futures_USDT_BUSD.append(s['symbol'])
@@ -236,9 +222,9 @@ for s in allsymbols:
         symbols_binance_futures_USDT_BUSD.append(s['symbol'])
     symbols_binance_futures.append(s['symbol'])
 
+
 def get_symbols():
     symbols = []
-
     if exchange_symbol == 'binance_usdt_perp':
         symbols = symbols_binance_futures_USDT
     elif exchange_symbol == 'binance_busd_perp':
@@ -460,27 +446,38 @@ def new_batch_order(params):
     return response
 
 
-info = client.futures_exchange_info()
 
 
 def get_precision(symbol):
-    for x in info['symbols']:
+    for x in exchange_info['symbols']:
         if x['symbol'] == symbol:
             return x['quantityPrecision']
 
 def set_price(symbol, price, longshort):
-    data = client.futures_exchange_info()  # request data
-    info = data['symbols']  # pull list of symbols
-    for x in range(len(info)):  # find length of list and run loop
-        if info[x]['symbol'] == symbol:  # until we find our coin
-            a = info[x]["filters"][0]['tickSize']  # break into filters pulling tick size
+    e_info = exchange_info['symbols']  # pull list of symbols
+    for x in range(len(e_info)):  # find length of list and run loop
+        if e_info[x]['symbol'] == symbol:  # until we find our coin
+            a = e_info[x]["filters"][0]['tickSize']  # break into filters pulling tick size
             cost = round_step_size(price, float(a)) # convert tick size from string to float, insert in helper func with cost
             # 아래는 시장가의 비용 및 sleepage 를 보고 나중에 추가 또는 삭제 검토요
             # cost = cost - float(a) if longshort else cost + float(a)
             return cost
 
-def my_available_balance(exchange_symbol):
+def my_available_balance(s, exchange_symbol):
     response = um_futures_client.balance(recvWindow=6000)
+    if exchange_symbol == 'binance_usdt_busd_perp':
+        if s[-4:] == 'USDT':
+            my_marginavailable_l = [x['marginAvailable'] for x in response if x['asset'] == 'USDT']
+            my_marginbalance_l = [x['availableBalance'] for x in response if x['asset'] == 'USDT']
+            my_walletbalance_l = [x['balance'] for x in response if x['asset'] == 'USDT']
+            if len(my_marginbalance_l) == 1:
+                return my_marginavailable_l[0], float(my_marginbalance_l[0]), float(my_walletbalance_l[0])
+        if s[-4:] == 'BUSD':
+            my_marginavailable_l = [x['marginAvailable'] for x in response if x['asset'] == 'BUSD']
+            my_marginbalance_l = [x['availableBalance'] for x in response if x['asset'] == 'BUSD']
+            my_walletbalance_l = [x['balance'] for x in response if x['asset'] == 'BUSD']
+            if len(my_marginbalance_l) == 1:
+                return my_marginavailable_l[0], float(my_marginbalance_l[0]), float(my_walletbalance_l[0])
     if exchange_symbol == 'binance_usdt_perp':
         my_marginavailable_l = [x['marginAvailable'] for x in response if x['asset'] == 'USDT']
         my_marginbalance_l = [x['availableBalance'] for x in response if x['asset'] == 'USDT']
@@ -515,8 +512,7 @@ def format_valueDown(val, step_size_str):
 
 
 def get_quantity_step_size_minqty(symbol):
-    response = um_futures_client.exchange_info()
-    symbols = response['symbols']
+    symbols = exchange_info['symbols']
     filters = [x['filters'] for x in symbols if x['symbol'] == symbol]
     filter = filters[0]
     stepsize = [x['stepSize'] for x in filter if x['filterType'] == 'LOT_SIZE']
@@ -557,6 +553,13 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
     entry_price = w4
     sl_price = w1
 
+    entry_price = set_price(symbol, entry_price, longshort)
+    sl_price = set_price(symbol, sl_price, longshort)
+    target_price = set_price(symbol, target_price, longshort)
+
+    if entry_price == sl_price:
+        logger.info(symbol + ' _entry_price == sl_price')
+        return
 
     df_active = df[w.idx_end + 1:]
     dates = df_active.Date.tolist()
@@ -594,7 +597,7 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
 
     if c_active_min_max and c_current_price:
 
-        margin_available, available_balance, wallet_balance = my_available_balance(exchange_symbol)
+        margin_available, available_balance, wallet_balance = my_available_balance(symbol, exchange_symbol)
 
         if not margin_available:
             logger.info('margin_available : False')
@@ -625,14 +628,6 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
         if not quantity:
             logger.info('quantity:' + str(quantity))
             logger.info('available_balance:%s, wallet_balance:%s' % (str(available_balance), str(wallet_balance)))
-            return
-
-        entry_price = set_price(symbol, entry_price, longshort)
-        sl_price = set_price(symbol, sl_price, longshort)
-        target_price = set_price(symbol, target_price, longshort)
-
-        if entry_price == sl_price:
-            logger.info(symbol + ' _entry_price == sl_price')
             return
 
         #####  이중 new limit order 방지 로직 start #####
@@ -891,6 +886,7 @@ def loopsymbol(symbol, i):
                         for rule in rules_to_check:
                             if wavepattern.check_rule(rule):
 
+                                # same condition with real play
                                 c_check_wave_identical = False
                                 c_check_wave_identical_2_3_4 = False
                                 if len(open_order_history) > 0:
@@ -901,9 +897,10 @@ def loopsymbol(symbol, i):
                                         # check identical check
                                         c_check_wave_identical = True if (open_order_wavepattern.dates == wavepattern.dates) and (open_order_wavepattern.values == wavepattern.values) else False
                                         # 2,3,4 wave same check
-                                        c_check_wave_identical_2_3_4 = True if (open_order_wavepattern.dates[2:-2] == wavepattern.dates[2:-2]) and (open_order_wavepattern.values[2:-2] == wavepattern.values[2:-2]) else False
+                                        # c_check_wave_identical_2_3_4 = True if (open_order_wavepattern.dates[2:-2] == wavepattern.dates[2:-2]) and (open_order_wavepattern.values[2:-2] == wavepattern.values[2:-2]) else False
+                                        c_check_wave_identical_2_3_4 = False
 
-                                c_query_new = False
+                                c_query_new = True
                                 history_new = [x for x in open_order_history if
                                                (x['symbol'] == symbol and x['status'] == 'NEW')]
 
@@ -928,10 +925,9 @@ def loopsymbol(symbol, i):
                                             r_query_status = r_query_limit['status']
 
                                             if r_query_limit['status'] == 'NEW' or r_query_limit['status'] == 'FILLED':
-                                                c_query_new = True
+                                                c_query_new = False
 
-                                # if not (c_check_wave_identical and c_query_new):
-                                if not ((c_check_wave_identical or c_check_wave_identical_2_3_4) and c_query_new):
+                                if c_query_new and not (c_check_wave_identical or c_check_wave_identical_2_3_4):
                                     blesstrade_new_limit_order(df_all, symbol, fc, longshort, df_lows_plot, df_highs_plot, wavepattern, i)
 
     return
@@ -1269,19 +1265,20 @@ if __name__ == '__main__':
       | |_ __ __ _  __| |_ _ __   __ _  | |_/ / ___ | |_
       | | '__/ _` |/ _` | | '_ \ / _` | | ___ \/ _ \| __|
       | | | | (_| | (_| | | | | | (_| | | |_/ / (_) | |_
-      \_/_|  \__,_|\__,_|_|_| |_|\__, | \____/ \___/ \__| v0.2
+      \_/_|  \__,_|\__,_|_|_| |_|\__, | \____/ \___/ \__| v0.25
                                   __/ |
                                  |___/
 
     """)
     print_condition()
-    set_leverage_allsymbol(symbols_binance_futures, leverage)
+    # set_leverage_allsymbol(symbols_binance_futures, leverage)
 
     start = time.perf_counter()
 
     symbols = get_symbols()
     i = 1
     logger.info('PID:' + str(os.getpid()))
+    logger.info('seq:' + seq)
     while True:
         if i % 10 == 1:
             logger.info(f'{i} start: {time.strftime("%H:%M:%S")}')
