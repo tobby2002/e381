@@ -12,3 +12,5 @@ venv/
 cryptofeed/
 examples/
 phx/
+.log
+.pkl
