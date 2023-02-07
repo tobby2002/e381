@@ -223,6 +223,7 @@ for s in exchange_info['symbols']:
     symbols_binance_futures.append(s['symbol'])
 
 
+
 def get_symbols():
     symbols = []
     if exchange_symbol == 'binance_usdt_perp':
