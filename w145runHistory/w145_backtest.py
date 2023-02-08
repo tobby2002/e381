@@ -27,7 +27,8 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 # log 출력 형식
 # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+# formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter('%(message)s')
 # log 출력
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
@@ -159,54 +160,54 @@ fee_limit_sl = (fee_limit + fee_sl + fee_slippage) * leverage
 
 
 def print_condition():
-    print('-------------------------------')
-    print('exchange:%s' % str(exchange))
-    print('exchange_symbol:%s' % str(exchange_symbol))
-    print('futures:%s' % str(futures))
-    print('type:%s' % str(type))
-    print('leverage:%s' % str(leverage))
-    print('seed:%s' % str(seed))
-    print('fee:%s%%' % str(fee*100))
-    print('fee_limit:%s%%' % str(fee_limit*100))
-    print('fee_sl:%s%%' % str(fee_sl*100))
-    print('fee_tp:%s%%' % str(fee_tp*100))
-    print('tp_type:%s' % str(tp_type))
-    print('fee_slippage:%s%%' % str(round(fee_slippage*100, 4)))
-    print('(fee_limit_sl:%s%%' % round(float(fee_limit_sl)*100, 4))
-    print('timeframe: %s' % timeframe)
-    print('period_days_ago: %s' % period_days_ago)
-    print('period_days_ago_till: %s' % period_days_ago_till)
-    print('period_interval: %s' % period_interval)
-    print('round_trip_count: %s' % round_trip_count)
-    print('compounding: %s' % compounding)
-    print('fcnt: %s' % fcnt)
-    print('loop_count: %s' % loop_count)
+    logger.info('-------------------------------')
+    logger.info('exchange:%s' % str(exchange))
+    logger.info('exchange_symbol:%s' % str(exchange_symbol))
+    logger.info('futures:%s' % str(futures))
+    logger.info('type:%s' % str(type))
+    logger.info('leverage:%s' % str(leverage))
+    logger.info('seed:%s' % str(seed))
+    logger.info('fee:%s%%' % str(fee*100))
+    logger.info('fee_limit:%s%%' % str(fee_limit*100))
+    logger.info('fee_sl:%s%%' % str(fee_sl*100))
+    logger.info('fee_tp:%s%%' % str(fee_tp*100))
+    logger.info('tp_type:%s' % str(tp_type))
+    logger.info('fee_slippage:%s%%' % str(round(fee_slippage*100, 4)))
+    logger.info('(fee_limit_sl:%s%%' % round(float(fee_limit_sl)*100, 4))
+    logger.info('timeframe: %s' % timeframe)
+    logger.info('period_days_ago: %s' % period_days_ago)
+    logger.info('period_days_ago_till: %s' % period_days_ago_till)
+    logger.info('period_interval: %s' % period_interval)
+    logger.info('round_trip_count: %s' % round_trip_count)
+    logger.info('compounding: %s' % compounding)
+    logger.info('fcnt: %s' % fcnt)
+    logger.info('loop_count: %s' % loop_count)
 
-    print('symbol_duplicated: %s' % symbol_duplicated)
-    print('symbol_random: %s' % symbol_random)
-    print('symbol_each: %s' % symbol_each)
-    print('symbol_last: %s' % symbol_last)
-    print('symbol_length: %s' % symbol_length)
+    logger.info('symbol_duplicated: %s' % symbol_duplicated)
+    logger.info('symbol_random: %s' % symbol_random)
+    logger.info('symbol_each: %s' % symbol_each)
+    logger.info('symbol_last: %s' % symbol_last)
+    logger.info('symbol_length: %s' % symbol_length)
 
-    # print('timeframe: %s' % timeframe)
+    # logger.info('timeframe: %s' % timeframe)
     start_dt = str((pd.to_datetime('today') - pd.Timedelta(str(period_days_ago) + ' days')).date())
     end_dt = str((pd.to_datetime('today') - pd.Timedelta(str(period_days_ago_till) + ' days')).date())
-    print('period: %s ~ %s' % (start_dt, end_dt))
-    print('up_to_count: %s' % up_to_count)
-    print('condi_same_date: %s' % condi_same_date)
-    # print('long: %s' % long)
-    print('o_fibo: %s' % o_fibo)
-    print('h_fibo: %s' % h_fibo)
-    print('l_fibo: %s' % l_fibo)
+    logger.info('period: %s ~ %s' % (start_dt, end_dt))
+    logger.info('up_to_count: %s' % up_to_count)
+    logger.info('condi_same_date: %s' % condi_same_date)
+    # logger.info('long: %s' % long)
+    logger.info('o_fibo: %s' % o_fibo)
+    logger.info('h_fibo: %s' % h_fibo)
+    logger.info('l_fibo: %s' % l_fibo)
 
-    print('entry_fibo: %s' % entry_fibo)
-    print('target_fibo: %s' % target_fibo)
-    print('sl_fibo: %s' % sl_fibo)
+    logger.info('entry_fibo: %s' % entry_fibo)
+    logger.info('target_fibo: %s' % target_fibo)
+    logger.info('sl_fibo: %s' % sl_fibo)
 
-    print('intersect_idx: %s' % intersect_idx)
-    print('plotview: %s' % plotview)
-    print('printout: %s' % printout)
-    print('-------------------------------')
+    logger.info('intersect_idx: %s' % intersect_idx)
+    logger.info('plotview: %s' % plotview)
+    logger.info('printout: %s' % printout)
+    logger.info('-------------------------------')
 
 client = None
 if not futures:
@@ -254,7 +255,7 @@ def get_symbols():
         symbols = symbols[:symbol_length]
     if symbol_random:
         symbols = random.sample(symbols, len(symbols))
-    print(len(symbols), symbols)
+    logger.info(str(len(symbols)) +',' + str(symbols))
     return symbols
 
 import threading
@@ -338,7 +339,7 @@ def get_historical_ohlc_data_start_end(symbol, start_int, end_int, past_days=Non
 
         except Exception as e:
             time.sleep(0.5)
-            # print(e)
+            # logger.info(e)
             return D, start_date_str, end_date_str
 
         if D is not None and D.empty:
@@ -458,10 +459,10 @@ def backtest_trade45(df, symbol, fcnt, longshort, df_lows_plot, df_highs_plot, w
     real_condititon1 = True if (fcnt/2 < (w.idx_end - w.idx_start)) and w.idx_start == idx else False
     real_condititon2 = True if df.iloc[idx + int(fcnt/2), 0] < (w.dates[-1]) else False
     if not real_condititon1:
-        if printout: print('not real_condititon1 ')
+        if printout: logger.info('not real_condititon1 ')
         return trade_info, False
     if not real_condititon2:
-        if printout: print('not real_condititon2 ')
+        if printout: logger.info('not real_condititon2 ')
         return trade_info, False
 
     t = trade_info
@@ -547,7 +548,7 @@ def backtest_trade45(df, symbol, fcnt, longshort, df_lows_plot, df_highs_plot, w
                 position = True
                 c_stoploss = True
                 position_enter_i = [dates[i], entry_price]
-                print('c_stoplost_direct')
+                logger.info('c_stoplost_direct')
                 open_order = {
                     'id': h_id,
                     'datetime': dt.datetime.now(),
@@ -568,13 +569,13 @@ def backtest_trade45(df, symbol, fcnt, longshort, df_lows_plot, df_highs_plot, w
                 dump_history_pkl()
 
             if position is False and c_out_trend_beyond:
-                if printout:  print('@@ beyondxxxx @@>c_out_trend (not position and c_out_trend_beyond), ', i, close)
+                if printout:  logger.info('@@ beyondxxxx @@>c_out_trend (not position and c_out_trend_beyond), ', i, close)
                 # print('beyondxxxx @@>c_out_trend (not position and c_out_trend_beyond), ', i, close)
                 return trade_info, False
             elif position is False and c_positioning:
                 position = True
                 position_enter_i = [dates[i], entry_price]
-                if printout: print('===>c_positioning (c_positioning), ', i, close, position_enter_i)
+                if printout: logger.info('===>c_positioning (c_positioning), ', i, close, position_enter_i)
                 # print('c_positioning (c_positioning), ', i, close, position_enter_i)
                 open_order = {
                     'id': h_id,
@@ -607,7 +608,7 @@ def backtest_trade45(df, symbol, fcnt, longshort, df_lows_plot, df_highs_plot, w
                         trade_count.append(0)
                         trade_inout_i = [position_enter_i, position_sl_i, longshort, '-']
                         order_history.append(trade_inout_i)
-                        if printout: print('- stoploss, ', i, close, position_enter_i, position_sl_i)
+                        if printout: logger.info('- stoploss, ', i, close, position_enter_i, position_sl_i)
                         # update_history_status(open_order_history, symbol, h_id, 'DONE')
 
                     if c_profit:
@@ -617,7 +618,7 @@ def backtest_trade45(df, symbol, fcnt, longshort, df_lows_plot, df_highs_plot, w
                         trade_count.append(1)
                         trade_inout_i = [position_enter_i, position_pf_i, longshort, '+']
                         order_history.append(trade_inout_i)
-                        if printout: print('+ profit, ', i, close, position_enter_i, position_pf_i)
+                        if printout: logger.info('+ profit, ', i, close, position_enter_i, position_pf_i)
                         # update_history_status(open_order_history, symbol, h_id, 'DONE')
 
 
@@ -643,7 +644,7 @@ def backtest_trade45(df, symbol, fcnt, longshort, df_lows_plot, df_highs_plot, w
                     # if float(trade_stats[4]) > 0 :
                     if True :
                     # if w2_rate > 0.9:
-                        print(symbol, fcnt, 'L' if longshort else 'S', trade_inout_i[0][0][2:-3], '-',  trade_inout_i[1][0][11:-3], str(trade_stats))
+                        logger.info( '%s, %s, %s, %s, %s, %s, %s' % (symbol, fcnt, 'L' if longshort else 'S', trade_inout_i[0][0][2:-3], '-',  trade_inout_i[1][0][11:-3], str(trade_stats)))
                               # , w2_rate,
                               #     w3_rate, w3_rate / w2_rate)
                     # print(symbol, trade_inut_i[0][0][2:-3], str(trade_stats))
@@ -794,6 +795,8 @@ def loopsymbol(symbol, i, trade_info):
                                             [str(wave_opt.values)]
                                         ])
 
+
+
                                         # same condition with real play
                                         c_check_wave_identical = False
                                         c_check_wave_identical_2_3_4 = False
@@ -816,9 +819,10 @@ def loopsymbol(symbol, i, trade_info):
                                                                                                             2:-2]) else False
 
                                         if c_check_wave_identical or c_check_wave_identical_2_3_4:
-                                            print(c_check_wave_identical, c_check_wave_identical_2_3_4)
+                                            # print(c_check_wave_identical, c_check_wave_identical_2_3_4)
                                             if c_check_wave_identical_2_3_4:
-                                                print('234')
+                                                # print('234')
+                                                pass
                                             return trade_info
 
 
@@ -834,8 +838,8 @@ def loopsymbol(symbol, i, trade_info):
                                             trade_info, trade_flg = backtest_trade45(df_all, symbol, fc, longshort, df_lows_plot, df_highs_plot, wavepattern, trade_info, i, wavepattern_l, wavepattern_tpsl_l)
 
                                             if printout:
-                                                print(f'{rule.name} found: {wave_opt.values}')
-                                                print(f'good... {(wavepattern.idx_end - wavepattern.idx_start + 1) }/{fc}found')
+                                                logger.info(f'{rule.name} found: {wave_opt.values}')
+                                                logger.info(f'good... {(wavepattern.idx_end - wavepattern.idx_start + 1) }/{fc}found')
 
                                             if plotview and trade_flg:
                                                 # if len(wavepattern_l) > 0:
@@ -854,8 +858,8 @@ def loopsymbol(symbol, i, trade_info):
 
                                     else:
                                         if printout:
-                                            print(f'{rule.name} found: {wave_opt.values}')
-                                            print(f'not good... {(wavepattern.idx_end - wavepattern.idx_start + 1)}/{fc}found')
+                                            logger.info(f'{rule.name} found: {wave_opt.values}')
+                                            logger.info(f'not good... {(wavepattern.idx_end - wavepattern.idx_start + 1)}/{fc}found')
 
 
     # if plotview:
@@ -874,7 +878,7 @@ def loopsymbol(symbol, i, trade_info):
 
     return trade_info
     # except Exception as e:
-    #     print('loopsymbol Exception : %s ' % e)
+    #     logger.info('loopsymbol Exception : %s ' % e)
 
 def get_i_r(list, key, value):
     r = [[i, x] for i, x in enumerate(list) if x[key] == value]
@@ -914,11 +918,11 @@ def round_trip(i):
     # single
     single(symbols, i, trade_info)
     round_trip.append(trade_info[2][-1])
-    print(i, ' | ', trade_info[2][-1], len(trade_count), ' | ', asset_history[-1])
+    logger.info(i, ' | ', trade_info[2][-1], len(trade_count), ' | ', asset_history[-1])
     return round_trip
 
 if __name__ == '__main__':
-    print("""
+    logger.info("""
 
      _____             _ _              ______       _
     |_   _|           | (_)             | ___ \     | |
@@ -931,7 +935,7 @@ if __name__ == '__main__':
 
     """)
     print_condition()
-    print('seq:' + seq)
+    logger.info('seq:' + seq)
     rount_trip_total = []
     start = time.perf_counter()
     if round_trip_flg:
@@ -942,19 +946,19 @@ if __name__ == '__main__':
                 # cpucount = multiprocessing.cpu_count() * 1
                 # cpucount = multiprocessing.cpu_count()
                 cpucount = 1
-                print('cpucount:%s' % cpucount)
+                logger.info('cpucount:%s' % cpucount)
                 pool = multiprocessing.Pool(processes=cpucount)
                 rt = pool.map(round_trip, range(period_days_ago, period_days_ago_till, -1 * period_interval))
                 pool.close()
                 pool.join()
                 start_dt = str((pd.to_datetime('today') - pd.Timedelta(str(period_days_ago) + ' days')).date())
                 end_dt = str((pd.to_datetime('today') - pd.Timedelta(str(period_days_ago_till) + ' days')).date())
-                print(f'Finished in {round(time.perf_counter() - start, 2)} second(s)')
+                logger.info(f'Finished in {round(time.perf_counter() - start, 2)} second(s)')
             except Exception as e:
                 # print(e)
                 pass
 
-            print('============ %s stat.==========' % str(i))
+            logger.info('============ %s stat.==========' % str(i))
             r = list(map(lambda i: i[0], rt))
 
             winrate_l = list(map(lambda i: 1 if i[0] > seed else 0, rt))
@@ -968,19 +972,19 @@ if __name__ == '__main__':
                 winrate = str(round((sum(winrate_l))/len(winrate_l)*100, 2))
             if meanaverage:
                 total_gains = (meanaverage - seed)*roundcount
-            print('round r: %s' % r)
-            print('round winrate_l: %s' % str(winrate_l))
-            print('round roundcount: %s' % roundcount)
-            print('round winrate: %s' % winrate)
-            print('round meanaverage: %s' % str(meanaverage))
-            print('round total gains: %s' % str(total_gains))
-            print('============ %s End All=========='% str(i))
+            logger.info('round r: %s' % r)
+            logger.info('round winrate_l: %s' % str(winrate_l))
+            logger.info('round roundcount: %s' % roundcount)
+            logger.info('round winrate: %s' % winrate)
+            logger.info('round meanaverage: %s' % str(meanaverage))
+            logger.info('round total gains: %s' % str(total_gains))
+            logger.info('============ %s End All=========='% str(i))
 
             rount_trip_total.append([meanaverage, roundcount, winrate, total_gains])
         print_condition()
         for i, v in enumerate(rount_trip_total):
-            print(i, v)
-        print(f'Finished wave_analyzer in {round(time.perf_counter() - start, 2)} second(s)')
+            logger.info(i, v)
+        logger.info(f'Finished wave_analyzer in {round(time.perf_counter() - start, 2)} second(s)')
 
     else:
 
@@ -1002,19 +1006,19 @@ if __name__ == '__main__':
             else:
                 print(str(i)+'/'+str(len(r)), ' now asset: ', seed, ' | ', len(trade_count), ' | pre seed: ', seed)
 
-        print('============ %s stat.==========' % str(i))
+        logger.info('============ %s stat.==========' % str(i))
         winrate_l = list(map(lambda i: 1 if i > 0 else 0, pnl_history))
         meanaverage = round((sum(asset_history)/len(asset_history)), 2)
         roundcount = len(trade_count)
         winrate = str(round((sum(winrate_l))/len(winrate_l)*100, 2))
-        print('round r: %s' % roundcount)
-        print('round winrate_l: %s' % str(winrate_l))
-        print('round roundcount: %s' % roundcount)
-        print('round winrate: %s' % winrate)
-        print('round meanaverage: %s' % str(meanaverage))
-        print('round total gains: %s' % str(trade_info[-2][-1] if trade_info[2] else 0))
-        print('============ %s End All=========='% str(i))
-        print(f'Finished wave_analyzer in {round(time.perf_counter() - start, 2)} second(s)')
+        logger.info('round r: %s' % roundcount)
+        logger.info('round winrate_l: %s' % str(winrate_l))
+        logger.info('round roundcount: %s' % roundcount)
+        logger.info('round winrate: %s' % winrate)
+        logger.info('round meanaverage: %s' % str(meanaverage))
+        logger.info('round total gains: %s' % str(trade_info[-2][-1] if trade_info[2] else 0))
+        logger.info('============ %s End All=========='% str(i))
+        logger.info(f'Finished wave_analyzer in {round(time.perf_counter() - start, 2)} second(s)')
 
     print_condition()
-    print("good luck done!!")
+    logger.info("good luck done!!")
