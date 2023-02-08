@@ -44,11 +44,12 @@ from binancefutures.um_futures import UMFutures
 from binancefutures.lib.utils import config_logging
 from binancefutures.error import ClientError
 # config_logging(logging, logging.DEBUG)
-from binance.helpers import round_step_sizeye
+from binance.helpers import round_step_size
 import math
-key = "IkzH8WHKl0lGzOSqiZZ4TnAyKnDpqnC9Xi31kzrRNpwJCp28gP8AuWDxntSqWdrn"
-secret = "FwKTmQ2RWSiECMfhZOaY7Hed45JuXqlEPno2xiLGgCzloLq4NMMcmusG6gtMCKa5"
-
+# key = "IkzH8WHKl0lGzOSqiZZ4TnAyKnDpqnC9Xi31kzrRNpwJCp28gP8AuWDxntSqWdrn"
+# secret = "FwKTmQ2RWSiECMfhZOaY7Hed45JuXqlEPno2xiLGgCzloLq4NMMcmusG6gtMCKa5"
+key = "29Md2FYOblEkV5A1ycfSHNTCB1VGYRaVUJQt7djIR5BnFPOEZlHGBmyTqrTmu343"
+secret = "tiJphcdckYTBBUbe2nsv0IU78SvhdXjqW9v3rJ1vFSsvgagRcmqUqinziNCcghYD"
 
 um_futures_client = UMFutures(key=key, secret=secret)
 
