@@ -1052,6 +1052,8 @@ def monitoring_orders_positions(symbol):
                 r_query_limit = um_futures_client.query_order(symbol=symbol,
                                                               orderId=limit_orderId,
                                                               recvWindow=6000)
+
+
                 if r_query_limit['status'] == 'FILLED' or r_query_limit['status'] == 'PARTIALLY_FILLED':
                     target_price = r_query_limit['clientOrderId'].split('_')[2]  # target_price
                     quantity = r_query_limit['executedQty']  # target_price
