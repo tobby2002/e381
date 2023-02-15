@@ -1053,8 +1053,32 @@ def monitoring_orders_positions(symbol):
                                                               orderId=limit_orderId,
                                                               recvWindow=6000)
 
+                if r_query_limit['status'] == 'PARTIALLY_FILLED':
+                    target_price = r_query_limit['clientOrderId'].split('_')[2]  # target_price
+                    quantity = r_query_limit['executedQty']  # target_price
 
-                if r_query_limit['status'] == 'FILLED' or r_query_limit['status'] == 'PARTIALLY_FILLED':
+                    order_market = um_futures_client.new_order(
+                        symbol=symbol,
+                        side="SELL" if longshort else "BUY",
+                        positionSide="LONG" if longshort else "SHORT",
+                        type="MARKET",
+                        quantity=quantity,
+                        newClientOrderId="tp_" + str(limit_orderId)
+                    )
+                    if order_market['orderId']:
+                        logger.info(symbol + ' FORCE MARKET BY ONLY PARTIALLY_FILLED')
+
+                        # force cancel sl
+                        success_cancel = cancel_batch_order(symbol, [limit_orderId, sl_orderId])
+                        if success_cancel:
+                            update_history_by_limit_id(open_order_history, symbol, 'TP_PARTIALLY_FILLED', limit_orderId)
+
+                        # find history limit order and update it
+                        update_history_by_limit_id(open_order_history, symbol, 'DONE',
+                                                   limit_orderId)
+
+
+                if r_query_limit['status'] == 'FILLED':
                     target_price = r_query_limit['clientOrderId'].split('_')[2]  # target_price
                     quantity = r_query_limit['executedQty']  # target_price
 
