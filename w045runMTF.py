@@ -421,7 +421,7 @@ def sma_df(df, period=7):
 def new_batch_order(params):
     try:
         response = um_futures_client.new_batch_order(params)
-        logger.info(response)
+        # logger.info(response)
     except ClientError as error:
         logger.error(
             "Found error. status: {}, error code: {}, error message: {}".format(
@@ -439,7 +439,7 @@ def new_batch_order(params):
         try:
             time.sleep(0.1)  # 0.1초
             response = um_futures_client.new_batch_order(params)
-            logger.info(response)
+            # logger.info(response)
         except Exception as e:
             logger.error(e)
 
@@ -1018,8 +1018,7 @@ def update_history_status(open_order_history, symbol, h_id, new_status):
     history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
     history_id['status'] = new_status  # update new status
     open_order_history[history_idx] = history_id  # replace history
-    print(symbol + ' _update history to new status:%s' % new_status)
-    logger.info(symbol + ' _update history to new status:%s' % new_status)
+    logger.info(symbol + ' _%s update history' % new_status)
     dump_history_pkl()
 
 
@@ -1030,10 +1029,11 @@ def update_history_by_limit_id(open_order_history, symbol, description, limit_or
         h_id = history_matched[0]['id']
         update_history_status(open_order_history, symbol, h_id, description)
 
+
 def delete_history_status(open_order_history, symbol, h_id, event):
     history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
     open_order_history.pop(history_idx)
-    print(symbol + ' _delete history by %s' % event)
+    logger.info(symbol + ' _%s delete history' % event)
     dump_history_pkl()
 
 
@@ -1057,28 +1057,31 @@ def monitoring_orders_positions(symbol):
                     target_price = r_query_limit['clientOrderId'].split('_')[2]  # target_price
                     quantity = r_query_limit['executedQty']  # target_price
 
-                    order_market = um_futures_client.new_order(
-                        symbol=symbol,
-                        side="SELL" if longshort else "BUY",
-                        positionSide="LONG" if longshort else "SHORT",
-                        type="MARKET",
-                        quantity=quantity,
-                        newClientOrderId="tp_" + str(limit_orderId)
-                    )
-                    if order_market['orderId']:
-                        logger.info(symbol + ' FORCE MARKET BY ONLY PARTIALLY_FILLED')
+                    success = new_tp_order(symbol, longshort, target_price, quantity, limit_orderId)
+                    logger.info(symbol + '_TP_PARTIALLY_FILLED_ORDER monitoring_orders_positions ' + str(success))
+
+                    # order_market = um_futures_client.new_order(
+                    #     symbol=symbol,
+                    #     side="SELL" if longshort else "BUY",
+                    #     positionSide="LONG" if longshort else "SHORT",
+                    #     type="MARKET",
+                    #     quantity=quantity,
+                    #     newClientOrderId="tp_" + str(limit_orderId)
+                    # )
+                    if success:
+                        logger.info(symbol + ' _TP_PARTIALLY_FILLED_ORDER success')
 
                         # force cancel sl
                         success_cancel = cancel_batch_order(symbol, [limit_orderId, sl_orderId])
                         if success_cancel:
-                            update_history_by_limit_id(open_order_history, symbol, 'TP_PARTIALLY_FILLED', limit_orderId)
+                            update_history_by_limit_id(open_order_history, symbol, 'TP_PARTIALLY_FILLED_AND_OTHERS_CANCEL_ALL', limit_orderId)
 
                         # find history limit order and update it
                         update_history_by_limit_id(open_order_history, symbol, 'DONE',
                                                    limit_orderId)
 
 
-                if r_query_limit['status'] == 'FILLED':
+                elif r_query_limit['status'] == 'FILLED':
                     target_price = r_query_limit['clientOrderId'].split('_')[2]  # target_price
                     quantity = r_query_limit['executedQty']  # target_price
 
@@ -1095,6 +1098,7 @@ def monitoring_orders_positions(symbol):
                     else:
                         try:
                             success = new_tp_order(symbol, longshort, target_price, quantity, limit_orderId)
+                            logger.info(symbol+'_TP_ORDER monitoring_orders_positions '+str(success))
                         except Exception as e:
                             logging.error(
                                 "Found monitoring_orders_positions/r_query_tp error. symbol: {}, status: {}, error code: {}, error message: {}".format(
