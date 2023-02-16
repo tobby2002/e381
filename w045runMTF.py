@@ -1060,25 +1060,31 @@ def monitoring_orders_positions(symbol):
                     success = new_tp_order(symbol, longshort, target_price, quantity, limit_orderId)
                     logger.info(symbol + '_TP_PARTIALLY_FILLED_ORDER monitoring_orders_positions ' + str(success))
 
-                    # order_market = um_futures_client.new_order(
-                    #     symbol=symbol,
-                    #     side="SELL" if longshort else "BUY",
-                    #     positionSide="LONG" if longshort else "SHORT",
-                    #     type="MARKET",
-                    #     quantity=quantity,
-                    #     newClientOrderId="tp_" + str(limit_orderId)
-                    # )
+
                     if success:
-                        logger.info(symbol + ' _TP_PARTIALLY_FILLED_ORDER success')
+                        logger.info(symbol + ' _TP_PARTIALLY_FILLED_LIMIT_ORDER success')
+                    else:
+                        order_market = um_futures_client.new_order(
+                            symbol=symbol,
+                            side="SELL" if longshort else "BUY",
+                            positionSide="LONG" if longshort else "SHORT",
+                            type="MARKET",
+                            quantity=quantity,
+                            newClientOrderId="tp_" + str(limit_orderId)
+                        )
+                        if order_market['orderId']:
+                            logger.info(symbol + ' _TP_PARTIALLY_MARKET_TAKE_PROFIT new order success')
+                            # find history limit order and update it
+                            update_history_by_limit_id(open_order_history, symbol, 'TAKE_PROFIT', limit_orderId)
 
-                        # force cancel sl
-                        success_cancel = cancel_batch_order(symbol, [limit_orderId, sl_orderId])
-                        if success_cancel:
-                            update_history_by_limit_id(open_order_history, symbol, 'TP_PARTIALLY_FILLED_AND_OTHERS_CANCEL_ALL', limit_orderId)
+                    # force cancel sl
+                    success_cancel = cancel_batch_order(symbol, [limit_orderId, sl_orderId])
+                    if success_cancel:
+                        update_history_by_limit_id(open_order_history, symbol, 'TP_PARTIALLY_FILLED_AND_OTHERS_CANCEL_ALL', limit_orderId)
 
-                        # find history limit order and update it
-                        update_history_by_limit_id(open_order_history, symbol, 'DONE',
-                                                   limit_orderId)
+                    # find history limit order and update it
+                    update_history_by_limit_id(open_order_history, symbol, 'DONE',
+                                               limit_orderId)
 
 
                 elif r_query_limit['status'] == 'FILLED':
