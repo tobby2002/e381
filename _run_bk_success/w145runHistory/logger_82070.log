@@ -1,0 +1,61 @@
+[Errno 2] No such file or directory: 'oohistory_82070.pkl'
+[Errno 2] No such file or directory: 'oohistory_82070.pkl'
+
+
+     _____             _ _              ______       _
+    |_   _|           | (_)             | ___ \     | |
+      | |_ __ __ _  __| |_ _ __   __ _  | |_/ / ___ | |_
+      | | '__/ _` |/ _` | | '_ \ / _` | | ___ \/ _ \| __|
+      | | | | (_| | (_| | | | | | (_| | | |_/ / (_) | |_
+      \_/_|  \__,_|\__,_|_|_| |_|\__, | \____/ \___/ \__| v0.2 BACK TESTOR
+                                  __/ |
+                                 |___/
+
+    
+-------------------------------
+exchange:BINANCE
+exchange_symbol:binance_usdt_busd_perp
+futures:True
+type:['long', 'short']
+leverage:0.25
+seed:100
+fee:0.0%
+fee_limit:0.018000000000000002%
+fee_sl:0.036000000000000004%
+fee_tp:0.018000000000000002%
+tp_type:maker
+fee_slippage:0.01%
+(fee_limit_sl:0.016%
+timeframe: 3
+period_days_ago: 75
+period_days_ago_till: 60
+period_interval: 2
+round_trip_count: 1
+compounding: True
+fcnt: [31, 51, 71, 91, 111]
+loop_count: 1
+symbol_duplicated: False
+symbol_random: True
+symbol_each: True
+symbol_last: False
+symbol_length: False
+period: 2022-11-26 ~ 2022-12-11
+up_to_count: 3
+condi_same_date: True
+o_fibo: 118.0
+h_fibo: 100.0
+l_fibo: 100.0
+entry_fibo: 0.999
+target_fibo: 1.1
+sl_fibo: -0.005
+intersect_idx: False
+plotview: False
+printout: False
+-------------------------------
+seq:82070
+201,['DOGEBUSD', 'CELRUSDT', 'IOTXUSDT', 'CELOUSDT', 'ANTUSDT', 'DOGEUSDT', 'APTBUSD', 'CHRUSDT', '1000LUNCBUSD', 'ETCUSDT', 'VETUSDT', 'CVXBUSD', 'STGUSDT', 'XEMUSDT', '1000SHIBUSDT', 'AUCTIONBUSD', 'HBARUSDT', 'LDOUSDT', 'LEVERBUSD', 'AGIXBUSD', 'GALAUSDT', 'LUNA2BUSD', 'CVCUSDT', 'TRXUSDT', 'GMTBUSD', 'AXSUSDT', 'UNIBUSD', 'DGBUSDT', '1000SHIBBUSD', 'XMRUSDT', 'FTMBUSD', 'BTCDOMUSDT', 'FTMUSDT', 'SANDBUSD', 'IMXUSDT', 'AVAXBUSD', 'LTCUSDT', 'TUSDT', 'DYDXUSDT', 'LUNA2USDT', 'MTLUSDT', 'GALUSDT', 'BNBBUSD', 'HIGHUSDT', 'HNTUSDT', 'CVXUSDT', 'ADAUSDT', 'SKLUSDT', '1000XECUSDT', 'RNDRUSDT', 'SRMUSDT', 'HOOKUSDT', 'INJUSDT', 'SFPUSDT', 'COTIUSDT', 'MATICBUSD', 'ZECUSDT', '1000LUNCUSDT', 'XLMUSDT', 'OPUSDT', 'FILBUSD', 'IOSTUSDT', 'FLOWUSDT', 'STORJUSDT', 'DENTUSDT', 'SUSHIUSDT', 'LINAUSDT', 'ARPAUSDT', 'FXSUSDT', 'STMXUSDT', 'ALPHAUSDT', 'RSRUSDT', 'LRCUSDT', 'APEUSDT', 'AVAXUSDT', 'XRPUSDT', 'ALICEUSDT', 'SOLUSDT', 'RAYUSDT', 'BTCBUSD', 'MAGICUSDT', 'BATUSDT', 'TRXBUSD', 'ZENUSDT', 'LITUSDT', 'XRPBUSD', 'LPTUSDT', 'IOTAUSDT', 'DASHUSDT', 'CTKUSDT', 'OGNUSDT', 'WAVESUSDT', 'NKNUSDT', 'PHBBUSD', 'BTSUSDT', 'TLMBUSD', 'ENJUSDT', 'SNXUSDT', 'BNXUSDT', 'AUDIOUSDT', 'RENUSDT', 'TRBUSDT', 'LINKBUSD', 'BCHUSDT', 'ETHUSDT', 'WOOUSDT', 'GALABUSD', 'SOLBUSD', 'GTCUSDT', 'EGLDUSDT', 'BALUSDT', 'ONEUSDT', 'BLUEBIRDUSDT', 'SCUSDT', 'BLZUSDT', 'APTUSDT', 'RUNEUSDT', '1INCHUSDT', 'FTTUSDT', 'EOSUSDT', 'AAVEUSDT', 'ETHBUSD', 'DEFIUSDT', 'BTCUSDT', 'REEFUSDT', 'ZRXUSDT', 'ZILUSDT', 'RVNUSDT', 'ARUSDT', 'SXPUSDT', 'FOOTBALLUSDT', 'MATICUSDT', 'RLCUSDT', 'ETCBUSD', 'KNCUSDT', 'LINKUSDT', 'LDOBUSD', 'BANDUSDT', 'BNBUSDT', 'CRVUSDT', 'QNTUSDT', 'UNFIUSDT', 'ALGOUSDT', 'MINAUSDT', 'NEARBUSD', 'ENSUSDT', 'SANDUSDT', 'OCEANUSDT', 'DARUSDT', 'KSMUSDT', 'ICPBUSD', 'NEOUSDT', 'ICXUSDT', 'ATAUSDT', 'THETAUSDT', 'MANAUSDT', 'OMGUSDT', 'KAVAUSDT', 'ANCBUSD', 'GRTUSDT', 'YFIUSDT', 'ANKRUSDT', 'TOMOUSDT', 'ROSEUSDT', 'CTSIUSDT', 'APEBUSD', 'API3USDT', 'FLMUSDT', 'DOTUSDT', 'FTTBUSD', 'TLMUSDT', 'UNIUSDT', 'DODOBUSD', 'BELUSDT', 'PEOPLEUSDT', 'C98USDT', 'ATOMUSDT', 'AMBBUSD', 'FETUSDT', 'XTZUSDT', 'BAKEUSDT', 'SPELLUSDT', 'CHZUSDT', 'JASMYUSDT', 'MKRUSDT', 'WAVESBUSD', 'MASKUSDT', 'NEARUSDT', 'DUSKUSDT', 'COMPUSDT', 'HOTUSDT', 'ONTUSDT', 'KLAYUSDT', 'DOTBUSD', 'GMTUSDT', 'GALBUSD', 'QTUMUSDT', 'ICPUSDT', 'FILUSDT', 'ADABUSD', 'LTCBUSD']
+IOTXUSDT 31 L 22-11-26 20:00 - 21:00 [1, 100.0, 'IOTXUSDT', 100.0994128360798, '0.0011', 0.10841283607979119, 0.009000000000000001]
+IOTXUSDT 31 S 22-11-28 03:57 - 04:39 [2, 100.0, 'IOTXUSDT', 100.14537940124666, '0.0005', 0.163388348401889, 0.01800894715524718]
+IOTXUSDT 31 L 22-11-28 07:15 - 07:18 [3, 100.0, 'IOTXUSDT', 100.191463907, '0.0006', 0.21848593830134025, 0.02702203130135938]
+APTBUSD 31 L 22-11-27 13:48 - 13:57 [4, 75.0, 'APTBUSD', 99.5196047186194, '-0.0065', -0.43734261585412904, 0.04305266552647938]
+APTBUSD 31 L 22-11-28 04:00 - 04:39 [5, 60.0, 'APTBUSD', 99.3327509630729, '-0.0017', -0.6082732346456509, 0.05897580228145848]
