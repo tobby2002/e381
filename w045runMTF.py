@@ -10,15 +10,22 @@ import numpy as np
 from binance.client import Client
 import datetime as dt
 from tapy import Indicators
-import multiprocessing
-import random
 import shutup; shutup.please()
 from datetime import datetime
 from typing import Optional
 import dateparser
 import pytz
 import json
+import os
+import random
+import pickle
+import math
 import logging
+from binancefutures.um_futures import UMFutures
+from binancefutures.lib.utils import config_logging
+from binancefutures.error import ClientError
+# config_logging(logging, logging.DEBUG)
+from binance.helpers import round_step_size
 
 seq = str(random.randint(10000, 99999))
 # 로그 생성
@@ -28,6 +35,8 @@ logger.setLevel(logging.INFO)
 # log 출력 형식
 # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+# formatter = logging.Formatter('%(message)s')
+
 # log 출력
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
@@ -37,15 +46,7 @@ file_handler = logging.FileHandler('logger_%s.log' % seq)
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
-# import ccxt
-import pandas as pd
-import logging
-from binancefutures.um_futures import UMFutures
-from binancefutures.lib.utils import config_logging
-from binancefutures.error import ClientError
-# config_logging(logging, logging.DEBUG)
-from binance.helpers import round_step_size
-import math
+
 # key = "IkzH8WHKl0lGzOSqiZZ4TnAyKnDpqnC9Xi31kzrRNpwJCp28gP8AuWDxntSqWdrn"
 # secret = "FwKTmQ2RWSiECMfhZOaY7Hed45JuXqlEPno2xiLGgCzloLq4NMMcmusG6gtMCKa5"
 key = "29Md2FYOblEkV5A1ycfSHNTCB1VGYRaVUJQt7djIR5BnFPOEZlHGBmyTqrTmu343"
@@ -53,22 +54,17 @@ secret = "tiJphcdckYTBBUbe2nsv0IU78SvhdXjqW9v3rJ1vFSsvgagRcmqUqinziNCcghYD"
 
 um_futures_client = UMFutures(key=key, secret=secret)
 
-import pickle
-open_order_history = [
-    # {'id':'timestamp', 'symbol':'SYMBOLUSDT', 'wavepattern': wavepattern, 'entry':'10000', 'target':'10381', 'status':'NEW or DRAW or TAKE_PROFIT or DONE',  'data': [{limit_result}, {sl_result}, {tp_result}], 'position':[]}
-    # {'id':'1234567890.1234', 'symbol': 'BTCUSDT', 'wavepattern': wavepattern, 'entry':'10000', 'target':'10381', 'status':'NEW' 'data': [{'orderId': 1300759837, 'symbol': 'WOOUSDT', 'status': 'NEW', 'clientOrderId': 'waveshortlimit001', 'price': '0.21310', 'avgPrice': '0.00000', 'origQty': '30', 'executedQty': '0', 'cumQty': '0', 'cumQuote': '0', 'timeInForce': 'GTC', 'type': 'LIMIT', 'reduceOnly': False, 'closePosition': False, 'side': 'SELL', 'positionSide': 'SHORT', 'stopPrice': '0', 'workingType': 'CONTRACT_PRICE', 'priceProtect': False, 'origType': 'LIMIT', 'updateTime': 1674269613350}, {'orderId': 1300759838, 'symbol': 'WOOUSDT', 'status': 'NEW', 'clientOrderId': 'waveshortlimit001sl', 'price': '0', 'avgPrice': '0.00000', 'origQty': '30', 'executedQty': '0', 'cumQty': '0', 'cumQuote': '0', 'timeInForce': 'GTC', 'type': 'STOP_MARKET', 'reduceOnly': True, 'closePosition': False, 'side': 'BUY', 'positionSide': 'SHORT', 'stopPrice': '0.22103', 'workingType': 'CONTRACT_PRICE', 'priceProtect': False, 'origType': 'STOP_MARKET', 'updateTime': 1674269613350}]}
-]
-import os
-import random
+open_order_history = []
+open_order_history_seq= 'oohistory_' + seq + '.pkl'
 
-open_order_history_seq = 'oohistory_' + seq + '.pkl'
 
 def load_history_pkl():
     try:
-        with open(open_order_history_seq, 'rb') as f:
-            h = pickle.load(f)
-            logger.info('load_history_pk:' + str(h))
-            return h
+        if os.path.isfile(open_order_history_seq):
+            with open(open_order_history_seq, 'rb') as f:
+                h = pickle.load(f)
+                logger.info('load_history_pk:' + str(h))
+                return h
     except Exception as e:
         logger.error(e)
         try:
@@ -78,7 +74,9 @@ def load_history_pkl():
         return []
     return []
 
+
 open_order_history = load_history_pkl()
+
 
 def dump_history_pkl():
     try:
@@ -91,11 +89,13 @@ def dump_history_pkl():
 with open('w045configMTF.json', 'r') as f:
     config = json.load(f)
 
+version = config['default']['version']
+descrition = config['default']['descrition']
 exchange = config['default']['exchange']
 exchange_symbol = config['default']['exchange_symbol']
 futures = config['default']['futures']
 type = config['default']['type']
-leverage = config['default']['leverage']
+maxleverage = config['default']['maxleverage']
 qtyrate = config['default']['qtyrate']
 
 
@@ -121,7 +121,11 @@ loop_count = config['default']['loop_count']
 timeframe = config['default']['timeframe']
 up_to_count = config['default']['up_to_count']
 condi_same_date = config['default']['condi_same_date']
-long = config['default']['long']
+
+c_risk_beyond_flg = config['default']['c_risk_beyond_flg']
+c_risk_beyond_max = config['default']['c_risk_beyond_max']
+c_risk_beyond_min = config['default']['c_risk_beyond_min']
+
 o_fibo = config['default']['o_fibo']
 h_fibo = config['default']['h_fibo']
 l_fibo = config['default']['l_fibo']
@@ -131,7 +135,6 @@ sl_fibo = config['default']['sl_fibo']
 
 
 symbol_random = config['default']['symbol_random']
-symbol_duplicated = config['default']['symbol_duplicated']
 symbol_last = config['default']['symbol_last']
 symbol_length = config['default']['symbol_length']
 
@@ -148,11 +151,13 @@ printout = config['default']['printout']
 
 def print_condition():
     logger.info('-------------------------------')
+    logger.info('version:%s' % str(version))
+    logger.info('descrition:%s' % str(descrition))
     logger.info('exchange:%s' % str(exchange))
     logger.info('exchange_symbol:%s' % str(exchange_symbol))
     logger.info('futures:%s' % str(futures))
     logger.info('type:%s' % str(type))
-    logger.info('leverage:%s' % str(leverage))
+    logger.info('maxleverage:%s' % str(maxleverage))
     logger.info('qtyrate:%s' % str(qtyrate))
     logger.info('seed:%s' % str(seed))
     logger.info('fee:%s%%' % str(fee*100))
@@ -161,23 +166,24 @@ def print_condition():
     logger.info('period_days_ago: %s' % period_days_ago)
     logger.info('period_days_ago_till: %s' % period_days_ago_till)
     logger.info('period_interval: %s' % period_interval)
+
+    logger.info('c_risk_beyond_flg: %s' % c_risk_beyond_flg)
+    logger.info('c_risk_beyond_max: %s' % c_risk_beyond_max)
+    logger.info('c_risk_beyond_min: %s' % c_risk_beyond_min)
+
     logger.info('round_trip_count: %s' % round_trip_count)
     logger.info('compounding: %s' % compounding)
     logger.info('fcnt: %s' % fcnt)
     logger.info('loop_count: %s' % loop_count)
-
-    logger.info('symbol_duplicated: %s' % symbol_duplicated)
     logger.info('symbol_random: %s' % symbol_random)
     logger.info('symbol_last: %s' % symbol_last)
     logger.info('symbol_length: %s' % symbol_length)
 
-    # logger.info('timeframe: %s' % timeframe)
     start_dt = str((pd.to_datetime('today') - pd.Timedelta(str(period_days_ago) + ' days')).date())
     end_dt = str((pd.to_datetime('today') - pd.Timedelta(str(period_days_ago_till) + ' days')).date())
     logger.info('period: %s ~ %s' % (start_dt, end_dt))
     logger.info('up_to_count: %s' % up_to_count)
     logger.info('condi_same_date: %s' % condi_same_date)
-    # logger.info('long: %s' % long)
     logger.info('o_fibo: %s' % o_fibo)
     logger.info('h_fibo: %s' % h_fibo)
     logger.info('l_fibo: %s' % l_fibo)
@@ -194,13 +200,11 @@ def print_condition():
 client = None
 if not futures:
     # basic
-    client_basic = Client("basic_secret_key",
-                    "basic_secret_value")
+    client_basic = Client("basic_secret_key", "basic_secret_value")
     client = client_basic
 else:
     # futures
-    client_futures = Client("futures_secret_key",
-                    "futures_secret_value")
+    client_futures = Client("futures_secret_key", "futures_secret_value")
     client = client_futures
 
 symbols = list()
@@ -560,6 +564,17 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
     sl_price = set_price(symbol, sl_price, longshort)
     target_price = set_price(symbol, target_price, longshort)
 
+    if c_risk_beyond_flg:
+        pnl_percent_sl = (abs(entry_price - sl_price) / entry_price) * qtyrate
+        if pnl_percent_sl >= c_risk_beyond_max:  # decrease max sl rate   0.1 = 10%
+            logger.info(symbol + ' _c_risk_beyond_max : ' + str(pnl_percent_sl))
+            return
+
+        pnl_percent_tp = (abs(target_price - entry_price) / entry_price) * qtyrate
+        if pnl_percent_tp <= c_risk_beyond_min:  # reduce low tp rate  0.005 = 0.5%
+            logger.info(symbol + ' _c_risk_beyond_min : ' + str(pnl_percent_tp))
+            return
+
     if entry_price == sl_price:
         logger.info(symbol + ' _entry_price == sl_price')
         return
@@ -607,10 +622,8 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
             logger.info('symbol:%s, available_balance:%s, wallet_balance:%s' % (symbol, str(available_balance), str(wallet_balance)))
             return
 
-        # max_quantity = float(available_balance) * int(leverage) / current_price
+        # max_quantity = float(available_balance) * int(leveragexxxxx) / current_price
         # quantity = max_quantity * qtyrate
-
-        # max_quantity = wallet_balance * qtyrate * int(leverage) / current_price
         max_quantity = wallet_balance * qtyrate / current_price
         quantity = max_quantity
 
@@ -746,7 +759,7 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
                                 for order_tp in response:
                                     try:
                                         if order_tp['orderId']:
-                                            logger.info(symbol + ' _CANCEL BATCH [LIMIT NEW order by SL FAIL] success')
+                                            logger.info(symbol + ' _CANCEL BATCH [LIMIT NEW order by SL FAIL] success, order_tp: ' + str(order_tp))
                                             return
                                     except Exception as e:
                                         logger.error(symbol + ' _CANCEL BATCH [LIMIT NEW order by SL FAIL] error:' + str(e))
@@ -764,7 +777,7 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
                     for order_tp in response:
                         try:
                             if order_tp['orderId']:
-                                logger.info(symbol + ' _CANCEL BATCH [LIMIT NEW order by Exception] success')
+                                logger.info(symbol + ' _CANCEL BATCH [LIMIT NEW order by Exception] success, order_tp: ' + str(order_tp))
                         except Exception as e:
                             logger.error(symbol + ' _CANCEL BATCH [LIMIT NEW order by Exception] error:' + str(e))
     return
@@ -963,7 +976,6 @@ def new_tp_order(symbol, longshort, target, quantity, limit_orderId):
         try:
             if order_tp['orderId']:
                 logger.info(symbol + ' _TAKE_PROFIT new order success')
-                # find history limit order and update it
                 update_history_by_limit_id(open_order_history, symbol, 'TAKE_PROFIT', limit_orderId)
                 return True
         except Exception as e:
@@ -982,7 +994,6 @@ def new_tp_order(symbol, longshort, target, quantity, limit_orderId):
                         )
                         if order_market['orderId']:
                             logger.info(symbol + ' _TP MARKET over TP -> success')
-                            # find history limit order and update it
                             update_history_by_limit_id(open_order_history, symbol, 'DONE', limit_orderId)
                             return True
                 pass
@@ -994,22 +1005,23 @@ def new_tp_order(symbol, longshort, target, quantity, limit_orderId):
     return False
 
 
-def cancel_batch_order(symbol, orderIdList):
+def cancel_batch_order(symbol, order_id_l, desc):
     try:
         response = um_futures_client.cancel_batch_order(
-            symbol=symbol, orderIdList=orderIdList, origClientOrderIdList=[],
+            symbol=symbol, orderIdList=order_id_l, origClientOrderIdList=[],
             recvWindow=6000
         )
         if len(response) > 0:
             try:
                 if response[0]['orderId']:
+                    logger.info(symbol + (' _CANCEL BATCH ORDER success, %s : ' % desc) + str(response))
                     return True
             except Exception as e:
                 if response[0]['code']:
-                    logger.error(symbol + ' _cancel_batch_order error:' + str(response[0]['msg']))
+                    logger.error(symbol + (' _CANCEL BATCH ORDER error, %s : ' % desc) + str(response[0]['msg']))
                     return False
     except Exception as e:
-        logger.error(symbol + ' _cancel_batch_order Exception error:' + str(e))
+        logger.error(symbol + (' _CANCEL BATCH ORDER Exception Exception error, %s :' % desc) + str(e))
         return False
     return False
 
@@ -1067,17 +1079,17 @@ def monitoring_orders_positions(symbol):
                             newClientOrderId="tp_" + str(limit_orderId)
                         )
                         if order_market['orderId']:
-                            logger.info(symbol + ' _PARTIALLY_FILLED_FORCE_MARKET_TAKE_PROFIT new order success')
-                            # find history limit order and update it
-                            update_history_by_limit_id(open_order_history, symbol, 'TAKE_PROFIT', limit_orderId)
+                            logger.info(symbol + ' _PARTIALLY_FILLED_FORCE_MARKET_TAKE_PROFIT new order success, order_market:' + str(order_market))
+                            update_history_by_limit_id(open_order_history, symbol, 'PARTIAL_TAKE_PROFIT', limit_orderId)
 
-                            # force cancel sl
+                            # # force cancel limit(o), sl(x)
                             try:
-                                success_cancel = cancel_batch_order(symbol, [limit_orderId, sl_orderId])
+                                # success_cancel = cancel_batch_order(symbol, [limit_orderId, sl_orderId], 'descxxxx')
+                                success_cancel = cancel_batch_order(symbol, [limit_orderId], '_TP_PARTIALLY_FILLED_AND_CANCEL ONLY limit_orderId')
+
                                 if success_cancel:
                                     update_history_by_limit_id(open_order_history, symbol,
                                                                'TP_PARTIALLY_FILLED_AND_CANCEL_OTHERS', limit_orderId)
-                                    # find history limit order and update it
                                     update_history_by_limit_id(open_order_history, symbol, 'DONE',
                                                                limit_orderId)
                             except Exception as e:
@@ -1104,13 +1116,13 @@ def monitoring_orders_positions(symbol):
                     if tp_index:
                         if tp_order['status'] == 'FILLED':
                             # force cancel sl
-                            success_cancel = cancel_batch_order(symbol, [sl_orderId])
+                            success_cancel = cancel_batch_order(symbol, [sl_orderId], 'monitoring_orders/status=FILLED')
                             if success_cancel:
                                 update_history_by_limit_id(open_order_history, symbol, 'TP_FILLED', limit_orderId)
                     else:
                         try:
                             success = new_tp_order(symbol, longshort, target_price, quantity, limit_orderId)
-                            logger.info(symbol+'_TP_ORDER monitoring_orders_positions '+str(success))
+                            logger.info(symbol+' _TP_ORDER monitoring_orders_positions '+str(success))
                         except Exception as e:
                             logging.error(
                                 "Found monitoring_orders_positions/r_query_tp error. symbol: {}, status: {}, error code: {}, error message: {}".format(
@@ -1140,12 +1152,11 @@ def monitoring_orders_positions(symbol):
                                         )
                                         if order_market['orderId']:
                                             logger.info(symbol + ' FORCE MARKET BY ONLY POSI WITH NO SL_TP' + str(p))
-                                            # find history limit order and update it
                                             update_history_by_limit_id(open_order_history, symbol, 'DONE',
                                                                        limit_orderId)
     except Exception as e:
         logging.error(
-            "Found monitoring_orders_positions error. symbol: {}, status: {}, error code: {}, error message: {}".format(
+            "Found monitoring_orders_positions Exception error. symbol: {}, status: {}, error code: {}, error message: {}".format(
                 symbol, e.status_code, e.error_code, e.error_message
             )
         )
@@ -1171,7 +1182,7 @@ def set_status_manager_when_new_or_tp(tf, symbol):
             r_query_sl = um_futures_client.query_order(symbol=symbol,
                                                           orderId=h_sl_orderId,
                                                           recvWindow=6000)
-            # CASE TP
+            # CASE ON TP
             if h_tp_orderId:
                 r_query_tp = um_futures_client.query_order(symbol=symbol,
                                                               orderId=h_tp_orderId,
@@ -1179,16 +1190,14 @@ def set_status_manager_when_new_or_tp(tf, symbol):
                 if r_query_limit['status'] == 'FILLED' and r_query_sl['status'] == 'NEW' and r_query_tp['status'] == 'NEW':
                     return
                 if r_query_limit['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED' and r_query_tp['status'] == 'EXPIRED':
-                    # update_history_status(open_order_history, symbol, h_id, 'DONE')
                     delete_history_status(open_order_history, symbol, h_id, 'F-F-E')
                     return
                 if r_query_limit['status'] == 'FILLED' and r_query_sl['status'] == 'NEW' and r_query_tp['status'] == 'FILLED':
-                    success_cancel = cancel_batch_order(symbol, [h_sl_orderId])
+                    success_cancel = cancel_batch_order(symbol, [h_sl_orderId], 'set_status_manager/if h_tp_orderId')
                     if success_cancel:
-                        # update_history_status(open_order_history, symbol, h_id, 'DONE')
                         delete_history_status(open_order_history, symbol, h_id, 'F-N-F')
                     return
-            # CASE NO TP
+            # CASE ON NOT TP
             else:
                 if r_query_limit['status'] == 'NEW' and r_query_sl['status'] == 'NEW':
                     ###################
@@ -1206,9 +1215,8 @@ def set_status_manager_when_new_or_tp(tf, symbol):
 
                     if c_current_price:
                         # OUTZONE
-                        success_cancel = cancel_batch_order(symbol, [r_query_limit['orderId'], h_sl_orderId])
+                        success_cancel = cancel_batch_order(symbol, [r_query_limit['orderId'], h_sl_orderId], 'set_status/else OUTZONE')
                         if success_cancel:
-                            # update_history_status(open_order_history, symbol, h_id, 'OUTZONE')
                             delete_history_status(open_order_history, symbol, h_id, 'N-N-OUTZONE')
 
                     ###################
@@ -1244,8 +1252,7 @@ def set_status_manager_when_new_or_tp(tf, symbol):
                         if longshort else \
                         (active_max_value < entry_price and active_min_value > (w_end_price - o_fibo_value))
                     if not c_active_min_max:
-                        success_cancel = cancel_batch_order(symbol, [str(h_limit_orderId),
-                                                        str(h_sl_orderId)])
+                        success_cancel = cancel_batch_order(symbol, [str(h_limit_orderId), str(h_sl_orderId)], 'set_status/N-N-BEYOND')
                         if success_cancel:
                             delete_history_status(open_order_history, symbol, h_id, 'N-N-BEYOND')
                             return
@@ -1256,7 +1263,7 @@ def set_status_manager_when_new_or_tp(tf, symbol):
                     result_position = um_futures_client.get_position_risk(symbol=symbol, recvWindow=6000)
                     result_position_filtered = [x for x in result_position if x['entryPrice'] != '0.0']
                     if len(result_position_filtered) == 0:  # no position
-                        success_cancel = cancel_batch_order(symbol, [str(h_sl_orderId)])
+                        success_cancel = cancel_batch_order(symbol, [str(h_sl_orderId)], 'set_status/F-N-DONE')
                         if success_cancel:
                             delete_history_status(open_order_history, symbol, h_id, 'F-N-DONE')
                             return
@@ -1281,27 +1288,27 @@ def single(symbols, i, *args):
     return
 
 
-def set_leverage_allsymbol(symbols, leverage):
-    logger.info('set  x %s leverage start' % str(leverage))
+def set_maxleverage_allsymbol(symbols, maxleverage):
+    logger.info('set  x %s maxleverage start' % str(maxleverage))
     for symbol in symbols:
-        tryleverage = leverage
+        trymaxleverage = maxleverage
         while True:
             try:
                 response = um_futures_client.change_leverage(
-                    symbol=symbol, leverage=tryleverage, recvWindow=6000
+                    symbol=symbol, leverage=trymaxleverage, recvWindow=6000
                 )
-                time.sleep(0.1)
+                time.sleep(0.15)
                 logger.info(response)
                 break
             except ClientError as error:
-                tryleverage = tryleverage - 4
-                logger.error(
-                    "Found error. status: {}, error code: {}, error message: {}".format(
-                        error.status_code, error.error_code, error.error_message
-                    )
-                )
+                trymaxleverage = trymaxleverage - 1
+                # logger.error(
+                #     "Found error. status: {}, error code: {}, error message: {}".format(
+                #         error.status_code, error.error_code, error.error_message
+                #     )
+                # )
 
-    logger.info('set  x %s leverage done' % str(leverage))
+    logger.info('set  x %s maxleverage done' % str(maxleverage))
 
 if __name__ == '__main__':
     print("""
@@ -1311,13 +1318,13 @@ if __name__ == '__main__':
       | |_ __ __ _  __| |_ _ __   __ _  | |_/ / ___ | |_
       | | '__/ _` |/ _` | | '_ \ / _` | | ___ \/ _ \| __|
       | | | | (_| | (_| | | | | | (_| | | |_/ / (_) | |_
-      \_/_|  \__,_|\__,_|_|_| |_|\__, | \____/ \___/ \__| v0.3 w045MTF
+      \_/_|  \__,_|\__,_|_|_| |_|\__, | \____/ \___/ \__| %s %s
                                   __/ |
                                  |___/
 
-    """)
+    """ % (version, descrition))
     print_condition()
-    # set_leverage_allsymbol(symbols_binance_futures, leverage)
+    # set_maxleverage_allsymbol(symbols_binance_futures, maxleverage)
 
     start = time.perf_counter()
 
