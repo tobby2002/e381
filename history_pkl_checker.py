@@ -6,7 +6,7 @@ open_order_history = [
 import os
 def load_history_pkl():
     try:
-        with open('open_order_history.pkl', 'rb') as f:
+        with open('z_run_log/20230221/oohistory_80989.pkl', 'rb') as f:
             h = pickle.load(f)
             print('load_history_pk:' + str(h))
             return h
@@ -21,3 +21,4 @@ def load_history_pkl():
 
 open_order_history = load_history_pkl()
 print(len(open_order_history))
+print(str(open_order_history))

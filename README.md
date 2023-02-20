@@ -2,7 +2,7 @@
 $ cd ./home
 $ chmod -R 755 e381
 $ source ./venv/bin/activate
-$ nohup python -u n382_longshort_binance_trade_v0.2.py > nohup2.out 2>&1 &
+$ nohup python -u w045runMTF.py > nohup2.out 2>&1 &
 
 $ python filename.py &
 
@@ -77,3 +77,7 @@ $ top or top &        ---> ctrl + z
    93  chmod -R 755 e381/
    95  cd e381/
    97  history
+   
+   
+   lsof -i
+   kill -9 xxxxx
