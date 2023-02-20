@@ -1334,7 +1334,6 @@ if __name__ == '__main__':
             logger.info(f'{i} start: {time.strftime("%H:%M:%S")}')
         single(symbols, i)
         i += 1
-
     print(f'Finished in {round(time.perf_counter() - start, 2)} second(s)')
     print_condition()
     print("good luck done!!")

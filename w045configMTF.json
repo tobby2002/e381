@@ -11,6 +11,7 @@
     "maxleverage": 100,
     "qtyrate": 0.5,
 
+
     "_fee": "bybit_usdt_perp: -0.00025  0.0006    binance_futures: 0.0002    0.0004             0.01 --> 1%, 0.001 --> 0.1%, 0.0001 -> 0.01%   fee_taker:0.0004 시장가, fee_maker: 0.0002 지정가",
     "fee": 0.0000,
     "fee_limit": 0.00018,
