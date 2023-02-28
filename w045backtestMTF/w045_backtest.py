@@ -255,7 +255,7 @@ def get_symbols():
         symbols = symbols[:symbol_length]
     if symbol_random:
         symbols = random.sample(symbols, len(symbols))
-    logger.info(str(len(symbols)) +',' + str(symbols))
+    logger.info(str(len(symbols)) +' ' + str(symbols))
     return symbols
 
 import threading
@@ -658,7 +658,7 @@ def backtest_trade45(tf, df, symbol, fcnt, longshort, df_lows_plot, df_highs_plo
                     if True :
                     # if w2_rate > 0.9:
                         s_11 = symbol + '           '
-                        logger.info('%s %s %s x%s %s-%s %s %s %s %s %s %s' % (timeframe, s_11[:11], tf, qtyrate, period_days_ago, period_days_ago_till,  fcnt, 'L' if longshort else 'S', trade_inout_i[0][0][2:-3], '-',  trade_inout_i[1][0][8:-3], str(trade_stats)))
+                        logger.info('%s %s %s x%s %s-%s %s %s %s %s %s %s %s' % (timeframe, s_11[:11], tf, qtyrate, period_days_ago, period_days_ago_till,  fcnt, 'L' if longshort else 'S', trade_inout_i[0][0][2:-3], '-',  trade_inout_i[1][0][8:-3], str(trade_stats), str(c_risk_beyond_min)))
                               # , w2_rate,
                               #     w3_rate, w3_rate / w2_rate)
                     # print(symbol, trade_inut_i[0][0][2:-3], str(trade_stats))

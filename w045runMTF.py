@@ -147,6 +147,7 @@ futures_secret_value = config['futures']['secret_value']
 intersect_idx = config['default']['intersect_idx']
 plotview = config['default']['plotview']
 printout = config['default']['printout']
+init_running_trade = config['default']['init_running_trade']
 
 
 def print_condition():
@@ -195,6 +196,7 @@ def print_condition():
     logger.info('intersect_idx: %s' % intersect_idx)
     logger.info('plotview: %s' % plotview)
     logger.info('printout: %s' % printout)
+    logger.info('init_running_trade: %s' % init_running_trade)
     logger.info('-------------------------------')
 
 client = None
@@ -1068,47 +1070,73 @@ def monitoring_orders_positions(symbol):
                                                               recvWindow=6000)
 
                 if r_query_limit['status'] == 'PARTIALLY_FILLED':
-                    # target_price = r_query_limit['clientOrderId'].split('_')[2]  # target_price
-                    quantity = r_query_limit['executedQty']  # target_price
+                    target_price = r_query_limit['clientOrderId'].split('_')[2]  # target_price
+                    quantity = r_query_limit['executedQty']  # executedQty
 
                     try:
-                        order_market = um_futures_client.new_order(
-                            symbol=symbol,
-                            side="SELL" if longshort else "BUY",
-                            positionSide="LONG" if longshort else "SHORT",
-                            type="MARKET",
-                            quantity=quantity,
-                            newClientOrderId="tp_" + str(limit_orderId)
-                        )
-                        if order_market['orderId']:
-                            logger.info(symbol + ' _PARTIALLY_FILLED_FORCE_MARKET_TAKE_PROFIT new order success, order_market:' + str(order_market))
-                            update_history_by_limit_id(open_order_history, symbol, 'PARTIAL_TAKE_PROFIT', limit_orderId)
-
-                            # # force cancel limit(o), sl(x)
-                            try:
-                                # success_cancel = cancel_batch_order(symbol, [limit_orderId, sl_orderId], 'descxxxx')
-                                success_cancel = cancel_batch_order(symbol, [limit_orderId], '_TP_PARTIALLY_FILLED_AND_CANCEL ONLY limit_orderId')
-
-                                if success_cancel:
-                                    update_history_by_limit_id(open_order_history, symbol,
-                                                               'TP_PARTIALLY_FILLED_AND_CANCEL_OTHERS', limit_orderId)
-                            except Exception as e:
-                                logging.error(
-                                    "Found monitoring_orders_positions/_PARTIALLY_FILLED_FORCE_cancel_batch_order error. symbol: {}, status: {}, error code: {}, error message: {}".format(
-                                        symbol, e.status_code, e.error_code, e.error_message
-                                    )
+                        success = new_tp_order(symbol, longshort, target_price, quantity, limit_orderId)
+                        logger.info(symbol + ' _TP_ORDER PARTIALLY_FILLED monitoring_orders_positions ' + str(success))
+                        # # # force cancel limit(o), sl(x)
+                        try:
+                            # success_cancel = cancel_batch_order(symbol, [limit_orderId, sl_orderId], 'descxxxx')
+                            success_cancel = cancel_batch_order(symbol, [int(limit_orderId)],
+                                                                '_TP_PARTIALLY_FILLED_AND_CANCEL ONLY limit_orderId')
+                            if success_cancel:
+                                update_history_by_limit_id(open_order_history, symbol,
+                                                           'DONE', limit_orderId)
+                        except Exception as e:
+                            logging.error(
+                                "Found monitoring_orders_positions/_PARTIALLY_FILLED_FORCE_cancel_batch_order error. symbol: {}, status: {}, error code: {}, error message: {}".format(
+                                    symbol, e.status_code, e.error_code, e.error_message
                                 )
+                            )
                     except Exception as e:
                         logging.error(
-                            "Found monitoring_orders_positions/_PARTIALLY_FILLED_FORCE_MARKET_TAKE_PROFIT new order error. symbol: {}, status: {}, error code: {}, error message: {}".format(
+                            "Found monitoring_orders_positions/r_query_tp error. symbol: {}, status: {}, error code: {}, error message: {}".format(
                                 symbol, e.status_code, e.error_code, e.error_message
                             )
                         )
 
+                    # try:
+                    #     order_market = um_futures_client.new_order(
+                    #         symbol=symbol,
+                    #         side="SELL" if longshort else "BUY",
+                    #         positionSide="LONG" if longshort else "SHORT",
+                    #         type="MARKET",
+                    #         quantity=quantity,
+                    #         newClientOrderId="tp_" + str(limit_orderId)
+                    #     )
+                    #     if order_market['orderId']:
+                    #         logger.info(symbol + ' _PARTIALLY_FILLED_FORCE_MARKET_TAKE_PROFIT new order success, order_market:' + str(order_market))
+                    #         update_history_by_limit_id(open_order_history, symbol, 'DONE', limit_orderId)
+                    #
+                    #         # # # force cancel limit(o), sl(x)
+                    #         try:
+                    #             # success_cancel = cancel_batch_order(symbol, [limit_orderId, sl_orderId], 'descxxxx')
+                    #             success_cancel = cancel_batch_order(symbol, [int(limit_orderId), sl_orderId], '_TP_PARTIALLY_FILLED_AND_CANCEL ONLY limit_orderId')
+                    #
+                    #             if success_cancel:
+                    #                 update_history_by_limit_id(open_order_history, symbol,
+                    #                                            'DONE', limit_orderId)
+                    #         except Exception as e:
+                    #             logging.error(
+                    #                 "Found monitoring_orders_positions/_PARTIALLY_FILLED_FORCE_cancel_batch_order error. symbol: {}, status: {}, error code: {}, error message: {}".format(
+                    #                     symbol, e.status_code, e.error_code, e.error_message
+                    #                 )
+                    #             )
+                    # except Exception as e:
+                    #     logging.error(
+                    #         "Found monitoring_orders_positions/_PARTIALLY_FILLED_FORCE_MARKET_TAKE_PROFIT new order error. symbol: {}, status: {}, error code: {}, error message: {}".format(
+                    #             symbol, e.status_code, e.error_code, e.error_message
+                    #         )
+                    #     )
+
                 elif r_query_limit['status'] == 'FILLED':
                     limit_string = r_query_limit['clientOrderId'].split('_')[0]  # limit_string
+                    limit_origQty = float(r_query_limit['origQty'])  # origQty
+                    limit_executedQty = float(r_query_limit['executedQty'])  # executedQty
 
-                    if limit_string == 'limit':  # in case of neo system order signiture
+                    if limit_string == 'limit' and (limit_origQty == limit_executedQty):  # in case of neo system order signiture
                         sl_price = r_query_limit['clientOrderId'].split('_')[1]  # sl_price
                         target_price = r_query_limit['clientOrderId'].split('_')[2]  # target_price
                         quantity = r_query_limit['executedQty']  # target_price
@@ -1134,24 +1162,24 @@ def monitoring_orders_positions(symbol):
                                     for p in result_position_filtered:
                                         all_orders = um_futures_client.get_all_orders(symbol=symbol, recvWindow=6000)
                                         filled_limits = [x for x in all_orders if (
-                                                    x['status'] == 'FILLED' and x['type'] == 'LIMIT' and x['price'] == p[
-                                                'entryPrice'])]
+                                                    x['status'] == 'FILLED' and x['type'] == 'LIMIT' and x['price'] == p['entryPrice'])]
                                         if len(filled_limits) > 0:
-                                            limit_orderId = filled_limits[0]['orderId']
-                                            longshort = True if filled_limits[0]['positionSide'] == 'LONG' else False
-                                            quantity = p['positionAmt']
-                                            order_market = um_futures_client.new_order(
-                                                symbol=symbol,
-                                                side="SELL" if longshort else "BUY",
-                                                positionSide="LONG" if longshort else "SHORT",
-                                                type="MARKET",
-                                                quantity=quantity,
-                                                newClientOrderId="tp_" + str(limit_orderId)
-                                            )
-                                            if order_market['orderId']:
-                                                logger.info(symbol + ' FORCE MARKET BY ONLY POSI WITH NO SL_TP' + str(p))
-                                                update_history_by_limit_id(open_order_history, symbol, 'DRAW',
-                                                                           limit_orderId)
+                                            for filled_limit in filled_limits:
+                                                limit_orderId = filled_limit['orderId']
+                                                longshort = True if filled_limit['positionSide'] == 'LONG' else False
+                                                quantity = str(abs(float(p['positionAmt'])))
+                                                order_market = um_futures_client.new_order(
+                                                    symbol=symbol,
+                                                    side="SELL" if longshort else "BUY",
+                                                    positionSide="LONG" if longshort else "SHORT",
+                                                    type="MARKET",
+                                                    quantity=quantity,
+                                                    newClientOrderId="tp_" + str(limit_orderId)
+                                                )
+                                                if order_market['orderId']:
+                                                    logger.info(symbol + ' FORCE MARKET BY ONLY POSI WITH NO SL_TP' + str(p))
+                                                    update_history_by_limit_id(open_order_history, symbol, 'DRAW',
+                                                                               limit_orderId)
     except Exception as e:
         logging.error(
             "Found monitoring_orders_positions Exception error. symbol: {}, status: {}, error code: {}, error message: {}".format(
@@ -1180,8 +1208,13 @@ def set_status_manager_when_new_or_tp(tf, symbol):
             r_query_sl = um_futures_client.query_order(symbol=symbol,
                                                           orderId=h_sl_orderId,
                                                           recvWindow=6000)
+            limit_string = r_query_limit['clientOrderId'].split('_')[0]  # limit_string
+            limit_origQty = float(r_query_limit['origQty'])  # origQty
+            limit_executedQty = float(r_query_limit['executedQty'])  # executedQty
+
             # CASE ON TP
-            if h_tp_orderId:
+            if h_tp_orderId and limit_string == 'limit' and (limit_origQty == limit_executedQty):  # case of full qty filled
+
                 r_query_tp = um_futures_client.query_order(symbol=symbol,
                                                               orderId=h_tp_orderId,
                                                               recvWindow=6000)
@@ -1196,7 +1229,7 @@ def set_status_manager_when_new_or_tp(tf, symbol):
                         update_history_by_limit_id(open_order_history, symbol, 'WIN', h_limit_orderId)
                     return
             # CASE ON NOT TP
-            else:
+            elif not h_tp_orderId:
                 if r_query_limit['status'] == 'NEW' and r_query_sl['status'] == 'NEW':
                     ###################
                     # case1. outzone
@@ -1285,27 +1318,82 @@ def single(symbols, i, *args):
     return
 
 
-def set_maxleverage_allsymbol(symbols, maxleverage):
-    logger.info('set  x %s maxleverage start' % str(maxleverage))
+def set_maxleverage_allsymbol(symbols):
+    logger.info('set  set_maxleverage_allsymbol start')
     for symbol in symbols:
-        trymaxleverage = maxleverage
+        r = um_futures_client.leverage_brackets(symbol=symbol, recvWindow=6000)
+        max_leverage = r[0]['brackets'][0]['initialLeverage']
         while True:
             try:
-                response = um_futures_client.change_leverage(
-                    symbol=symbol, leverage=trymaxleverage, recvWindow=6000
+                rt = um_futures_client.change_leverage(
+                    symbol=symbol, leverage=max_leverage, recvWindow=6000
                 )
                 time.sleep(0.15)
-                logger.info(response)
+                logger.info(rt)
                 break
             except ClientError as error:
-                trymaxleverage = trymaxleverage - 1
-                # logger.error(
-                #     "Found error. status: {}, error code: {}, error message: {}".format(
-                #         error.status_code, error.error_code, error.error_message
-                #     )
-                # )
+                logger.error(
+                    "Found set_maxleverage_allsymbol error. status: {}, error code: {}, error message: {}".format(
+                        error.status_code, error.error_code, error.error_message
+                    )
+                )
 
-    logger.info('set  x %s maxleverage done' % str(maxleverage))
+    logger.info('set_maxleverage_allsymbol done')
+
+
+def cancel_all_positions():
+    positions = um_futures_client.account()['positions']
+    result_position_filtered = [x for x in positions if x['entryPrice'] != '0.0']
+    print(result_position_filtered)
+    for p in result_position_filtered:
+        time.sleep(0.5)
+        s = p['symbol']
+        longshort = True if p['positionSide'] == 'LONG' else False
+        quantity = str(abs(float(p['positionAmt'])))
+        order_market = um_futures_client.new_order(
+            symbol=s,
+            side="SELL" if longshort else "BUY",
+            positionSide="LONG" if longshort else "SHORT",
+            type="MARKET",
+            quantity=quantity,
+            newClientOrderId="tp_10101010101"
+        )
+        logging.info('cancel_all_positions %s: %s ' % (s, str(order_market)))
+
+
+def cancel_all_open_orders(symbols):
+    for s in symbols:
+        try:
+            time.sleep(0.5)
+            all_orders = um_futures_client.get_all_orders(symbol=s, recvWindow=6000)
+            newes = [x for x in all_orders if (x['status'] == 'NEW')]
+            if len(newes) > 0:
+                time.sleep(0.5)
+                response = um_futures_client.cancel_open_orders(symbol=s, recvWindow=6000)
+                logging.info('cancel_all_open_orders %s: %s ' % (s, str(response)))
+        except ClientError as error:
+            logging.error(
+                "Found error. status: {}, error code: {}, error message: {}".format(
+                    error.status_code, error.error_code, error.error_message
+                )
+            )
+
+
+def cancel_all_closes():
+    try:
+        if init_running_trade:
+            cancel_all_positions()
+            symbols = get_symbols()
+            cancel_all_open_orders(symbols)
+
+    except ClientError as error:
+        logging.error(
+            "Found error. status: {}, error code: {}, error message: {}".format(
+                error.status_code, error.error_code, error.error_message
+            )
+        )
+    except Exception as e:
+        logging.error('cancel_all_closes Exception e:' + str(e))
 
 if __name__ == '__main__':
     print("""
@@ -1321,10 +1409,9 @@ if __name__ == '__main__':
 
     """ % (version, descrition))
     print_condition()
-    # set_maxleverage_allsymbol(symbols_binance_futures, maxleverage)
-
+    # set_maxleverage_allsymbol(symbols_binance_futures)
     start = time.perf_counter()
-
+    cancel_all_closes()
     symbols = get_symbols()
     i = 1
     logger.info('PID:' + str(os.getpid()))

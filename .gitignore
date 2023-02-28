@@ -12,5 +12,7 @@ venv/
 cryptofeed/
 examples/
 phx/
+w045backtestMTF/
+_run_bk_success/
 .log
 .pkl
