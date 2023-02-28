@@ -1321,23 +1321,20 @@ def single(symbols, i, *args):
 def set_maxleverage_allsymbol(symbols):
     logger.info('set  set_maxleverage_allsymbol start')
     for symbol in symbols:
-        r = um_futures_client.leverage_brackets(symbol=symbol, recvWindow=6000)
-        max_leverage = r[0]['brackets'][0]['initialLeverage']
-        while True:
-            try:
-                rt = um_futures_client.change_leverage(
-                    symbol=symbol, leverage=max_leverage, recvWindow=6000
+        try:
+            r = um_futures_client.leverage_brackets(symbol=symbol, recvWindow=6000)
+            max_leverage = r[0]['brackets'][0]['initialLeverage']
+            time.sleep(0.2)
+            rt = um_futures_client.change_leverage(
+                symbol=symbol, leverage=max_leverage, recvWindow=6000
+            )
+            logger.info(rt)
+        except ClientError as error:
+            logger.error(
+                "Found set_maxleverage_allsymbol error. status: {}, error code: {}, error message: {}".format(
+                    error.status_code, error.error_code, error.error_message
                 )
-                time.sleep(0.15)
-                logger.info(rt)
-                break
-            except ClientError as error:
-                logger.error(
-                    "Found set_maxleverage_allsymbol error. status: {}, error code: {}, error message: {}".format(
-                        error.status_code, error.error_code, error.error_message
-                    )
-                )
-
+            )
     logger.info('set_maxleverage_allsymbol done')
 
 
@@ -1409,7 +1406,7 @@ if __name__ == '__main__':
 
     """ % (version, descrition))
     print_condition()
-    # set_maxleverage_allsymbol(symbols_binance_futures)
+    set_maxleverage_allsymbol(symbols_binance_futures)
     start = time.perf_counter()
     cancel_all_closes()
     symbols = get_symbols()
