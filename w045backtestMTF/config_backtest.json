@@ -24,8 +24,8 @@
     "low_target_w2": false,
 
     "_period": ["period_days_ago:30 --> 30 days ago", "period_days_ago_till:0 --> now", "period_interval:1 per 1day"],
-    "timeframe": [5, 15],
-    "period_days_ago": 1,
+    "timeframe": [3, 5, 15],
+    "period_days_ago": 8,
     "period_days_ago_till": 0,
     "period_interval": 2,
     "window": 720,
