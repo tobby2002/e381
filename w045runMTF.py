@@ -1434,7 +1434,7 @@ if __name__ == '__main__':
     print_condition()
     # set_maxleverage_allsymbol(symbols_binance_futures)
     start = time.perf_counter()
-    # cancel_all_closes()
+    cancel_all_closes()
     symbols = get_symbols()
     i = 1
     logger.info('PID:' + str(os.getpid()))
