@@ -1,7 +1,7 @@
 {
   "default": {
-    "version": "0.31",
-    "descrition": "045_MTF_HISTORY_RISK",
+    "version": "0.5",
+    "descrition": "045_MTF_TIME_OUT",
     "_exchange": "bybit_usdt_perp, binance_usdt_perp, binance_busd_perp binance_usdt_busd_perp",
     "exchange": "BINANCE",
     "exchange_symbol": "binance_usdt_busd_perp",
@@ -11,18 +11,13 @@
     "maxleverage": 100,
     "qtyrate": 0.25,
 
+    "_c_risk_beyond_desc": ["0.10: 10%,   0.0010: 0.1%"],
+    "c_risk_beyond_flg": true,
+    "c_risk_beyond_max": 0.1,
+    "c_risk_beyond_min": 0.0010,
 
-    "_fee": "bybit_usdt_perp: -0.00025  0.0006    binance_futures: 0.0002    0.0004             0.01 --> 1%, 0.001 --> 0.1%, 0.0001 -> 0.01%   fee_taker:0.0004 시장가, fee_maker: 0.0002 지정가",
-    "fee": 0.0000,
-    "fee_limit": 0.00018,
-    "fee_sl": 0.00036,
-    "tp_type": "maker",
-    "fee_tp": 0.00018,
-    "fee_slippage": 0.00010,
-
-    "high_target": 1.0,
-    "low_target": 1.0,
-    "low_target_w2": false,
+    "c_time_beyond_flg": true,
+    "c_time_beyond_rate": 0.381,
 
     "_period": ["period_days_ago:30 --> 30 days ago", "period_days_ago_till:0 --> now", "period_interval:1 per 1day"],
     "timeframe": [3, 5, 15],
@@ -31,6 +26,7 @@
     "period_interval": 2,
     "window": 720,
     "symbol_duplicated": false,
+
     "symbol_random": true,
     "symbol_last":false,
     "symbol_length":false,
@@ -45,10 +41,17 @@
     "up_to_count": 3,
     "condi_same_date": true,
 
-    "_c_risk_beyond_desc": ["0.10: 10%,   0.0010: 0.1%"],
-    "c_risk_beyond_flg": true,
-    "c_risk_beyond_max": 0.1,
-    "c_risk_beyond_min": 0.0010,
+    "_fee": "bybit_usdt_perp: -0.00025  0.0006    binance_futures: 0.0002    0.0004             0.01 --> 1%, 0.001 --> 0.1%, 0.0001 -> 0.01%   fee_taker:0.0004 시장가, fee_maker: 0.0002 지정가",
+    "fee": 0.0000,
+    "fee_limit": 0.00018,
+    "fee_sl": 0.00036,
+    "tp_type": "maker",
+    "fee_tp": 0.00018,
+    "fee_slippage": 0.00010,
+
+    "high_target": 1.0,
+    "low_target": 1.0,
+    "low_target_w2": false,
 
     "h_fibo_rate": [0, 11.8, 23.6, 38.2, 50, 61.8, 76.4, 88.2, 100, -0.75],
     "o_fibo": 118.0,
