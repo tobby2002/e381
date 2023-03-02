@@ -626,7 +626,8 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
     c_out_idx_width_beyond = True if (i / w_idx_width >= c_time_beyond_rate) else False
     if c_out_idx_width_beyond and c_time_beyond_flg:
         # logger.info('c_out_idx_width_beyond : True')
-        logger.info('symbol:%s, available_balance:%s, wallet_balance:%s' % (symbol, str(w_idx_width), str(i)))
+        # logger.info('symbol:%s, w_idx_width:%s, df_active.size:%s' % (symbol, str(w_idx_width), str(i)))
+        time.sleep(0.001)
         return
 
     if c_active_min_max and c_current_price:
@@ -1420,14 +1421,14 @@ if __name__ == '__main__':
     print_condition()
     # set_maxleverage_allsymbol(symbols_binance_futures)
     start = time.perf_counter()
-    cancel_all_closes()
+    # cancel_all_closes()
     symbols = get_symbols()
     i = 1
     logger.info('PID:' + str(os.getpid()))
     logger.info('seq:' + seq)
     while True:
-        if i % 10 == 1:
-            logger.info(f'{i} start: {time.strftime("%H:%M:%S")}')
+        # if i % 10 == 1:
+        logger.info(f'{i} start: {time.strftime("%H:%M:%S")}')
         single(symbols, i)
         i += 1
     print(f'Finished in {round(time.perf_counter() - start, 2)} second(s)')
