@@ -122,6 +122,9 @@ timeframe = config['default']['timeframe']
 up_to_count = config['default']['up_to_count']
 condi_same_date = config['default']['condi_same_date']
 
+c_time_beyond_flg = config['default']['c_time_beyond_flg']
+c_time_beyond_rate = config['default']['c_time_beyond_rate']
+
 c_risk_beyond_flg = config['default']['c_risk_beyond_flg']
 c_risk_beyond_max = config['default']['c_risk_beyond_max']
 c_risk_beyond_min = config['default']['c_risk_beyond_min']
@@ -167,6 +170,9 @@ def print_condition():
     logger.info('period_days_ago: %s' % period_days_ago)
     logger.info('period_days_ago_till: %s' % period_days_ago_till)
     logger.info('period_interval: %s' % period_interval)
+
+    logger.info('c_time_beyond_flg: %s' % c_time_beyond_flg)
+    logger.info('c_time_beyond_rate: %s' % c_time_beyond_rate)
 
     logger.info('c_risk_beyond_flg: %s' % c_risk_beyond_flg)
     logger.info('c_risk_beyond_max: %s' % c_risk_beyond_max)
@@ -615,10 +621,16 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
                             if longshort else \
                             (current_price < entry_price and current_price > half_entry_target)
 
+    w_idx_width = w.idx_end - w.idx_start
+    i = df_active.size
+    c_out_idx_width_beyond = True if (i / w_idx_width >= c_time_beyond_rate) else False
+    if c_out_idx_width_beyond and c_time_beyond_flg:
+        # logger.info('c_out_idx_width_beyond : True')
+        logger.info('symbol:%s, available_balance:%s, wallet_balance:%s' % (symbol, str(w_idx_width), str(i)))
+        return
+
     if c_active_min_max and c_current_price:
-
         margin_available, available_balance, wallet_balance = my_available_balance(symbol, exchange_symbol)
-
         if not margin_available:
             logger.info('margin_available : False')
             logger.info('symbol:%s, available_balance:%s, wallet_balance:%s' % (symbol, str(available_balance), str(wallet_balance)))
@@ -1406,7 +1418,7 @@ if __name__ == '__main__':
 
     """ % (version, descrition))
     print_condition()
-    set_maxleverage_allsymbol(symbols_binance_futures)
+    # set_maxleverage_allsymbol(symbols_binance_futures)
     start = time.perf_counter()
     cancel_all_closes()
     symbols = get_symbols()
