@@ -48,7 +48,7 @@
     "_c_risk_beyond_desc": ["0.10: 10%,   0.0010: 0.1%"],
     "c_risk_beyond_flg": true,
     "c_risk_beyond_max": 0.1,
-    "c_risk_beyond_min": 0.0001,
+    "c_risk_beyond_min": 0.0010,
 
     "h_fibo_rate": [0, 11.8, 23.6, 38.2, 50, 61.8, 76.4, 88.2, 100, -0.75],
     "o_fibo": 118.0,
