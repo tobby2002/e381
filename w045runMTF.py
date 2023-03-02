@@ -1284,6 +1284,19 @@ def set_status_manager_when_new_or_tp(tf, symbol):
                     # df_active = df[w.idx_end + 1:]
                     df_active = df.loc[df['Date'] > wave5_datetime]
 
+                    w_idx_width = w.idx_end - w.idx_start
+                    i = df_active.size
+                    c_out_idx_width_beyond = True if (i / w_idx_width >= c_time_beyond_rate) else False
+                    if c_out_idx_width_beyond and c_time_beyond_flg:
+                        # logger.info('c_out_idx_width_beyond : True')
+                        # logger.info('symbol:%s, w_idx_width:%s, df_active.size:%s' % (symbol, str(w_idx_width), str(i)))
+                        time.sleep(0.001)
+                        success_cancel = cancel_batch_order(symbol, [str(h_limit_orderId), str(h_sl_orderId)], 'c_out_idx_width_beyond/N-N-TIMEBEYOND')
+                        if success_cancel:
+                            delete_history_status(open_order_history, symbol, h_id, 'N-N-TIMEBEYOND')
+                            return
+                        return
+
                     try:
                         active_max_value = max(df_active.High.tolist(), default=w_end_price)
                         active_min_value = min(df_active.Low.tolist(), default=w_end_price)
