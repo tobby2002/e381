@@ -17,7 +17,7 @@
     "c_risk_beyond_max": 0.13,
     "c_risk_beyond_min": 0.0005,
 
-    "c_time_beyond_flg": true,
+    "c_time_beyond_flg": false,
     "c_time_beyond_rate": 0.500,
     "o_fibo": 118.0,
 
