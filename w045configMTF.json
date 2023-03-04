@@ -9,7 +9,7 @@
     "_trade_type": "[long, short] or [long] or [short]",
     "type": ["long","short"],
     "maxleverage": 100,
-    "qtyrate": 0.20,
+    "qtyrate": 0.2,
     "walletrate": 0.20,
 
     "_c_risk_beyond_desc": ["0.10: 10%,   0.0010: 0.1%"],
@@ -17,8 +17,8 @@
     "c_risk_beyond_max": 0.13,
     "c_risk_beyond_min": 0.0005,
 
-    "c_time_beyond_flg": false,
-    "c_time_beyond_rate": 0.618,
+    "c_time_beyond_flg": true,
+    "c_time_beyond_rate": 0.500,
     "o_fibo": 118.0,
 
     "_period": ["period_days_ago:30 --> 30 days ago", "period_days_ago_till:0 --> now", "period_interval:1 per 1day"],
