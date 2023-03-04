@@ -97,6 +97,7 @@ futures = config['default']['futures']
 type = config['default']['type']
 maxleverage = config['default']['maxleverage']
 qtyrate = config['default']['qtyrate']
+walletrate = config['default']['walletrate']
 
 
 high_target = config['default']['high_target']
@@ -151,6 +152,7 @@ intersect_idx = config['default']['intersect_idx']
 plotview = config['default']['plotview']
 printout = config['default']['printout']
 init_running_trade = config['default']['init_running_trade']
+reset_leverage = config['default']['reset_leverage']
 
 
 def print_condition():
@@ -163,6 +165,7 @@ def print_condition():
     logger.info('type:%s' % str(type))
     logger.info('maxleverage:%s' % str(maxleverage))
     logger.info('qtyrate:%s' % str(qtyrate))
+    logger.info('walletrate:%s' % str(walletrate))
     logger.info('seed:%s' % str(seed))
     logger.info('fee:%s%%' % str(fee*100))
     logger.info('fee_slippage:%s%%' % str(round(fee_slippage*100, 4)))
@@ -203,6 +206,7 @@ def print_condition():
     logger.info('plotview: %s' % plotview)
     logger.info('printout: %s' % printout)
     logger.info('init_running_trade: %s' % init_running_trade)
+    logger.info('reset_leverage: %s' % reset_leverage)
     logger.info('-------------------------------')
 
 client = None
@@ -645,8 +649,8 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
         step_size, minqty = get_quantity_step_size_minqty(symbol)
         quantity = format_value(quantity, step_size)
 
-        if available_balance <= wallet_balance * 0.09:
-            logger.info('available_balance <= wallet_balance * 0.09')
+        if available_balance <= wallet_balance * walletrate:
+            logger.info('available_balance <= wallet_balance * %s' % str(walletrate))
             logger.info('symbol:%s, available_balance:%s, wallet_balance:%s' % (symbol, str(available_balance), str(wallet_balance)))
         #     # return
 
@@ -1432,7 +1436,8 @@ if __name__ == '__main__':
 
     """ % (version, descrition))
     print_condition()
-    # set_maxleverage_allsymbol(symbols_binance_futures)
+    if reset_leverage:
+        set_maxleverage_allsymbol(symbols_binance_futures)
     start = time.perf_counter()
     cancel_all_closes()
     symbols = get_symbols()
