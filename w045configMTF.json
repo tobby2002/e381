@@ -9,8 +9,8 @@
     "_trade_type": "[long, short] or [long] or [short]",
     "type": ["long","short"],
     "maxleverage": 100,
-    "qtyrate": 0.2,
-    "walletrate": 0.20,
+    "qtyrate": 0.75,
+    "walletrate": 0.15,
 
     "_c_risk_beyond_desc": ["0.10: 10%,   0.0010: 0.1%"],
     "c_risk_beyond_flg": true,
