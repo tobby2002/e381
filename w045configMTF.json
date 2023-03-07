@@ -9,7 +9,7 @@
     "_trade_type": "[long, short] or [long] or [short]",
     "type": ["long","short"],
     "maxleverage": 100,
-    "qtyrate": 0.75,
+    "qtyrate": 1,
     "walletrate": 0.15,
 
     "_c_risk_beyond_desc": ["0.10: 10%,   0.0010: 0.1%"],
@@ -22,7 +22,7 @@
     "o_fibo": 118.0,
 
     "_period": ["period_days_ago:30 --> 30 days ago", "period_days_ago_till:0 --> now", "period_interval:1 per 1day"],
-    "timeframe": [15],
+    "timeframe": [5, 15],
     "period_days_ago": 5,
     "period_days_ago_till": 0,
     "period_interval": 2,
@@ -38,7 +38,7 @@
 
     "_fractal_count": ["5: default, 7, 9 , 11"],
     "_fcnt": [11, 31, 51, 71],
-    "fcnt": [31, 51, 71, 91, 111],
+    "fcnt": [31, 51, 71],
     "loop_count": 1,
     "up_to_count": 3,
     "condi_same_date": true,
