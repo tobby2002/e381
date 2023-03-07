@@ -372,7 +372,7 @@ def get_fetch_dohlcv(symbol,
                      limit=500):
     # startTime = start_int
     # endTime = end_int
-    datalist = um_futures_client.continuous_klines(symbol, interval, limit=limit)
+    datalist = um_futures_client.klines(symbol, interval, limit=limit)
     D = pd.DataFrame(datalist)
     D.columns = ['open_time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades',
                  'taker_base_vol', 'taker_quote_vol', 'is_best_match']
