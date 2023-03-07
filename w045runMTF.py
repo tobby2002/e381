@@ -1338,6 +1338,7 @@ def single(symbols, i, *args):
         for tf in timeframe:
             try:
                 monitoring_orders_positions(symbol)
+                time.sleep(0.1)
                 if len(open_order_history) > 0:
                     set_status_manager_when_new_or_tp(tf, symbol)
                 loopsymbol(tf, symbol, i)
