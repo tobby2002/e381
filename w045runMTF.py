@@ -372,7 +372,7 @@ def get_fetch_dohlcv(symbol,
                      limit=500):
     # startTime = start_int
     # endTime = end_int
-    datalist = um_futures_client.klines(symbol, interval, limit=limit)
+    datalist = um_futures_client.continuous_klines(symbol, interval, limit=limit)
     D = pd.DataFrame(datalist)
     D.columns = ['open_time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades',
                  'taker_base_vol', 'taker_quote_vol', 'is_best_match']
@@ -615,7 +615,7 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
     #                         if longshort else \
     #                         (current_price < entry_price and current_price > (w_end_price - o_fibo_value))
 
-    half_entry_target = entry_price + abs(target_price - entry_price)/2 if longshort else entry_price - abs(target_price - entry_price)/2
+    half_entry_target = entry_price + abs(target_price - entry_price)*(2/3) if longshort else entry_price - abs(target_price - entry_price)*(2/3)
     # case 2. 좀 더 많은 기회를 갖기 위한 것일까
     # c_current_price = (current_price > entry_price and current_price < target_price) \
     #                         if longshort else \
@@ -863,7 +863,7 @@ def loopsymbol(tf, symbol, i):
     ###################
     timeunit = 'm'
     bin_size = str(tf) + timeunit
-    delta = (10 * fcnt[0] + 1)
+    delta = (4 * fcnt[-1] + 1)
     df = get_fetch_dohlcv(symbol,
                         interval=bin_size,
                         limit=delta)
@@ -1271,7 +1271,7 @@ def set_status_manager_when_new_or_tp(tf, symbol):
                     # case2. beyond
                     ###################
                     w = history['wavepattern']
-                    delta = (10 * fcnt[0] + 1)
+                    delta = (4 * fcnt[-1] + 1)
                     df = get_fetch_dohlcv(symbol,
                                           interval=(str(tf) + 'm'),
                                           limit=delta)
