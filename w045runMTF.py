@@ -611,13 +611,10 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
 
 
     position = False
-    # c_active_min_max = (active_min_value >= entry_price and active_max_value < (w_end_price + o_fibo_value)) \
-    #                         if longshort else \
-    #                     (active_max_value <= entry_price and active_min_value > (w_end_price - o_fibo_value))
-    # even if over entry_price, give chance
-    c_active_min_max_in_zone = (active_min_value > w2 and active_max_value < (w_end_price + o_fibo_value)) \
+    c_active_min_max_in_zone = (active_min_value > entry_price and active_max_value < (w_end_price + o_fibo_value)) \
                             if longshort else \
-                        (active_max_value < w2 and active_min_value > (w_end_price - o_fibo_value))
+                        (active_max_value < entry_price and active_min_value > (w_end_price - o_fibo_value))
+
 
     # case 1.
     # c_current_price = (current_price > entry_price and current_price < (w_end_price + o_fibo_value)) \
