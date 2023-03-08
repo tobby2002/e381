@@ -591,7 +591,13 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
         logger.info(symbol + ' _entry_price == sl_price')
         return
 
-    df_active = df[w.idx_end + 1:]
+    # df_active = df[w.idx_end + 1:]
+    # df_active = df[w.idx_end:]
+
+    wave5_datetime = w.dates[-1]
+    # df_active = df[w.idx_end + 1:]
+    df_active = df.loc[df['Date'] >= wave5_datetime]
+
     dates = df_active.Date.tolist()
     closes = df_active.Close.tolist()
     trends = df_active.High.tolist() if longshort else df_active.Low.tolist()
@@ -603,12 +609,15 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
         logger.error('active_max_value:' + str(e))
         return
 
-    # check order or position
-    current_price = float(um_futures_client.ticker_price(symbol)['price'])
+
     position = False
-    c_active_min_max = (active_min_value > entry_price and active_max_value < (w_end_price + o_fibo_value)) \
+    # c_active_min_max = (active_min_value >= entry_price and active_max_value < (w_end_price + o_fibo_value)) \
+    #                         if longshort else \
+    #                     (active_max_value <= entry_price and active_min_value > (w_end_price - o_fibo_value))
+    # even if over entry_price, give chance
+    c_active_min_max_in_zone = (active_min_value > w2 and active_max_value < (w_end_price + o_fibo_value)) \
                             if longshort else \
-                        (active_max_value < entry_price and active_min_value > (w_end_price - o_fibo_value))
+                        (active_max_value < w2 and active_min_value > (w_end_price - o_fibo_value))
 
     # case 1.
     # c_current_price = (current_price > entry_price and current_price < (w_end_price + o_fibo_value)) \
@@ -621,10 +630,15 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
     #                         if longshort else \
     #                         (current_price < entry_price and current_price > target_price)
 
-    c_current_price = (current_price > entry_price and current_price < half_entry_target) \
-                            if longshort else \
-                            (current_price < entry_price and current_price > half_entry_target)
+    # check order or position
+    current_price = float(um_futures_client.ticker_price(symbol)['price'])
+    # c_current_price = (current_price >= entry_price and current_price < half_entry_target) \
+    #                         if longshort else \
+    #                         (current_price <= entry_price and current_price > half_entry_target)
 
+    c_current_price_in_zone = (current_price >= w2 and current_price < half_entry_target) \
+                            if longshort else \
+                            (current_price <= w2 and current_price > half_entry_target)
     w_idx_width = w.idx_end - w.idx_start
     i = df_active.size
     c_out_idx_width_beyond = True if (i / w_idx_width >= c_time_beyond_rate) else False
@@ -634,7 +648,7 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
         time.sleep(0.001)
         return
 
-    if c_active_min_max and c_current_price:
+    if c_active_min_max_in_zone and c_current_price_in_zone:
         margin_available, available_balance, wallet_balance = my_available_balance(symbol, exchange_symbol)
         if not margin_available:
             logger.info('margin_available : False')
@@ -1259,9 +1273,9 @@ def set_status_manager_when_new_or_tp(tf, symbol):
                         target_price - entry_price) / 2
 
                     current_price = float(um_futures_client.ticker_price(symbol)['price'])
-                    c_current_price = current_price > half_entry_target if longshort else current_price < half_entry_target
+                    c_current_price_on_outzone = current_price > half_entry_target if longshort else current_price < half_entry_target
 
-                    if c_current_price:
+                    if c_current_price_on_outzone:
                         # OUTZONE
                         success_cancel = cancel_batch_order(symbol, [r_query_limit['orderId'], h_sl_orderId], 'set_status/else OUTZONE')
                         if success_cancel:
@@ -1286,7 +1300,7 @@ def set_status_manager_when_new_or_tp(tf, symbol):
                                                                                                 0] - height_price * entry_fibo  # 0.05
                     wave5_datetime = w.dates[-1]
                     # df_active = df[w.idx_end + 1:]
-                    df_active = df.loc[df['Date'] > wave5_datetime]
+                    df_active = df.loc[df['Date'] >= wave5_datetime]
 
                     w_idx_width = w.idx_end - w.idx_start
                     i = df_active.size
