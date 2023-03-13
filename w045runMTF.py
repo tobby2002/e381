@@ -1487,8 +1487,8 @@ if __name__ == '__main__':
     logger.info('PID:' + str(os.getpid()))
     logger.info('seq:' + seq)
     while True:
-        if i % 1 == 1:
-            logger.info(f'{i} start: {time.strftime("%H:%M:%S")}')
+        # if i % 10 == 1:
+        logger.info(f'{i} start: {time.strftime("%H:%M:%S")}')
         single(symbols, i)
         i += 1
     print(f'Finished in {round(time.perf_counter() - start, 2)} second(s)')
