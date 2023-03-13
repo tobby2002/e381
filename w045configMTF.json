@@ -1,7 +1,7 @@
 {
   "default": {
-    "version": "0.51",
-    "descrition": "045_MTF_TIME_OUT",
+    "version": "0.53",
+    "descrition": "045_MTF added c_next_ohlc_beyond",
     "_exchange": "bybit_usdt_perp, binance_usdt_perp, binance_busd_perp binance_usdt_busd_perp",
     "exchange": "BINANCE",
     "exchange_symbol": "binance_usdt_busd_perp",
@@ -9,8 +9,8 @@
     "_trade_type": "[long, short] or [long] or [short]",
     "type": ["long", "short"],
     "maxleverage": 100,
-    "qtyrate": 0.5,
-    "walletrate": 0.15,
+    "qtyrate": 0.25,
+    "walletrate": 0.5,
 
     "_c_risk_beyond_desc": ["0.10: 10%,   0.0010: 0.1%"],
     "c_risk_beyond_flg": true,
@@ -38,7 +38,7 @@
 
     "_fractal_count": ["5: default, 7, 9 , 11"],
     "_fcnt": [11, 31, 51, 71],
-    "fcnt": [31, 51, 71],
+    "fcnt": [31],
     "loop_count": 1,
     "up_to_count": 3,
     "condi_same_date": true,
