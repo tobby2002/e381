@@ -614,7 +614,7 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
 
         c_next_ohlc_beyond = df_active_next_low < entry_price if longshort else df_active_next_high > entry_price
         if c_next_ohlc_beyond:
-            logger.log(s, str(df_active_next))
+            # logger.log(s, str(df_active_next))
             return
     else:
         return
@@ -1382,7 +1382,10 @@ def single(symbols, i, *args):
                 time.sleep(0.1)
                 if len(open_order_history) > 0:
                     set_status_manager_when_new_or_tp(tf, symbol)
-                loopsymbol(tf, symbol, i)
+                try:
+                    loopsymbol(tf, symbol, i)
+                except Exception as e:
+                    print('here', str(e))
             except Exception as e:
                 logger.error("ERROR in single:" + str(e))
                 print("ERROR in single:" + str(e))
