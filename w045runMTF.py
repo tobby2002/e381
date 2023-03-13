@@ -596,7 +596,8 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
 
     wave5_datetime = w.dates[-1]
     # df_active = df[w.idx_end + 1:]
-    df_active = df.loc[df['Date'] >= wave5_datetime]
+    # df_active = df.loc[df['Date'] >= wave5_datetime]
+    df_active = df.loc[df['Date'] > wave5_datetime]  # 2023.3.13 after liqu
 
     dates = df_active.Date.tolist()
     closes = df_active.Close.tolist()
@@ -621,7 +622,7 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
     #                         if longshort else \
     #                         (current_price < entry_price and current_price > (w_end_price - o_fibo_value))
 
-    half_entry_target = entry_price + abs(target_price - entry_price)*(2/3) if longshort else entry_price - abs(target_price - entry_price)*(2/3)
+    half_entry_target = entry_price + abs(target_price - entry_price)*(3/5) if longshort else entry_price - abs(target_price - entry_price)*(3/5)
     # case 2. 좀 더 많은 기회를 갖기 위한 것일까
     # c_current_price = (current_price > entry_price and current_price < target_price) \
     #                         if longshort else \
@@ -1297,7 +1298,22 @@ def set_status_manager_when_new_or_tp(tf, symbol):
                                                                                                 0] - height_price * entry_fibo  # 0.05
                     wave5_datetime = w.dates[-1]
                     # df_active = df[w.idx_end + 1:]
-                    df_active = df.loc[df['Date'] >= wave5_datetime]
+
+                    # here when df_active_next, trade is possible  / if elsecase, out  즉 웨이브가 끝나고 하나의 봉을 더 보고 그 다음부터 거래가 가능
+                    df_active_next = df[w.idx_end + 1: w.idx_end + 2]
+                    if not df_active_next.empty:
+                        df_active_next_high = df_active_next['High'].iat[0]
+                        df_active_next_low = df_active_next['Low'].iat[0]
+
+                        c_next_ohlc_beyond = df_active_next_low < entry_price if longshort else df_active_next_high > entry_price
+                        if c_next_ohlc_beyond:
+                            logger.log(s, str(df_active_next))
+                            return
+                    else:
+                        return
+
+                    # df_active = df.loc[df['Date'] >= wave5_datetime]
+                    df_active = df.loc[df['Date'] > wave5_datetime]
 
                     w_idx_width = w.idx_end - w.idx_start
                     i = df_active.size
