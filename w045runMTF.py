@@ -599,6 +599,33 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
     # df_active = df.loc[df['Date'] >= wave5_datetime]
     df_active = df.loc[df['Date'] > wave5_datetime]  # 2023.3.13 after liqu
 
+
+
+
+
+
+
+
+    # here when df_active_next, trade is possible  / if elsecase, out  즉 웨이브가 끝나고 하나의 봉을 더 보고 그 다음부터 거래가 가능
+    df_active_next = df[w.idx_end + 1: w.idx_end + 2]
+    if not df_active_next.empty:
+        df_active_next_high = df_active_next['High'].iat[0]
+        df_active_next_low = df_active_next['Low'].iat[0]
+
+        c_next_ohlc_beyond = df_active_next_low < entry_price if longshort else df_active_next_high > entry_price
+        if c_next_ohlc_beyond:
+            logger.log(s, str(df_active_next))
+            return
+    else:
+        return
+
+
+
+
+
+
+
+
     dates = df_active.Date.tolist()
     closes = df_active.Close.tolist()
     trends = df_active.High.tolist() if longshort else df_active.Low.tolist()
@@ -1299,19 +1326,6 @@ def set_status_manager_when_new_or_tp(tf, symbol):
                     wave5_datetime = w.dates[-1]
                     # df_active = df[w.idx_end + 1:]
 
-                    # here when df_active_next, trade is possible  / if elsecase, out  즉 웨이브가 끝나고 하나의 봉을 더 보고 그 다음부터 거래가 가능
-                    df_active_next = df[w.idx_end + 1: w.idx_end + 2]
-                    if not df_active_next.empty:
-                        df_active_next_high = df_active_next['High'].iat[0]
-                        df_active_next_low = df_active_next['Low'].iat[0]
-
-                        c_next_ohlc_beyond = df_active_next_low < entry_price if longshort else df_active_next_high > entry_price
-                        if c_next_ohlc_beyond:
-                            logger.log(s, str(df_active_next))
-                            return
-                    else:
-                        return
-
                     # df_active = df.loc[df['Date'] >= wave5_datetime]
                     df_active = df.loc[df['Date'] > wave5_datetime]
 
@@ -1473,7 +1487,7 @@ if __name__ == '__main__':
     logger.info('PID:' + str(os.getpid()))
     logger.info('seq:' + seq)
     while True:
-        if i % 10 == 1:
+        if i % 1 == 1:
             logger.info(f'{i} start: {time.strftime("%H:%M:%S")}')
         single(symbols, i)
         i += 1
