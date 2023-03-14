@@ -4,15 +4,20 @@ from models.WaveRules import Impulse, DownImpulse
 from models.WaveAnalyzer import WaveAnalyzer
 from models.WaveOptions import WaveOptionsGenerator5
 from models.helpers import plot_pattern_m
-import datetime
+import datetime as dt
 import pandas as pd
 import numpy as np
 from binance.client import Client
-import datetime as dt
 from tapy import Indicators
-import shutup; shutup.please()
-from datetime import datetime
 from typing import Optional
+from ratelimit import limits, sleep_and_retry
+from binancefutures.um_futures import UMFutures
+from binancefutures.lib.utils import config_logging
+from binancefutures.error import ClientError
+# config_logging(logging, logging.DEBUG)
+from binance.helpers import round_step_size
+
+import shutup; shutup.please()
 import dateparser
 import pytz
 import json
@@ -21,11 +26,9 @@ import random
 import pickle
 import math
 import logging
-from binancefutures.um_futures import UMFutures
-from binancefutures.lib.utils import config_logging
-from binancefutures.error import ClientError
-# config_logging(logging, logging.DEBUG)
-from binance.helpers import round_step_size
+import threading
+import functools
+import time
 
 seq = str(random.randint(10000, 99999))
 # 로그 생성
@@ -56,6 +59,84 @@ um_futures_client = UMFutures(key=key, secret=secret)
 
 open_order_history = []
 open_order_history_seq= 'oohistory_' + seq + '.pkl'
+
+
+@sleep_and_retry
+@limits(calls=2400, period=60)  # 2400call/60sec
+def api_call(method, arglist, **kwargs):
+    response = None
+    try:
+        if method == 'klines':
+            symbol = arglist[0]
+            interval = arglist[1]
+            limit = arglist[2]
+            response = um_futures_client.klines(symbol, interval, limit=limit)
+        elif method == 'new_batch_order':
+            params = arglist[0]
+            response = um_futures_client.new_batch_order(params)
+        elif method == 'balance':
+            response = um_futures_client.balance(recvWindow=6000)
+        elif method == 'ticker_price':
+            symbol = arglist[0]
+            response = um_futures_client.ticker_price(symbol)
+        elif method == 'query_order':
+            symbol = arglist[0]
+            orderId = arglist[1]
+            response = um_futures_client.query_order(symbol=symbol, orderId=orderId, recvWindow=6000)
+        elif method == 'cancel_batch_order':
+            symbol = arglist[0]
+            orderIdList = arglist[1]
+            origClientOrderIdList = arglist[2]
+            response = um_futures_client.cancel_batch_order(symbol=symbol, orderIdList=orderIdList, origClientOrderIdList=origClientOrderIdList, recvWindow=6000)
+        elif method == 'new_order':
+            symbol = arglist[0]
+            side = arglist[1]
+            positionSide = arglist[2]
+            type = arglist[3]
+            quantity = arglist[4]
+            newClientOrderId = arglist[5]
+            response = um_futures_client.new_order(
+                                symbol=symbol,
+                                side=side,
+                                positionSide=positionSide,
+                                type=type,
+                                quantity=quantity,
+                                newClientOrderId=newClientOrderId
+                            )
+        elif method == 'cancel_open_orders':
+            symbol = arglist[0]
+            response = um_futures_client.cancel_open_orders(symbol=symbol, recvWindow=6000)
+        elif method == 'get_all_orders':
+            symbol = arglist[0]
+            response = um_futures_client.get_all_orders(symbol=symbol, recvWindow=6000)
+        elif method == 'get_position_risk':
+            symbol = arglist[0]
+            response = um_futures_client.get_position_risk(symbol=symbol, recvWindow=6000)
+        elif method == 'leverage_brackets':
+            symbol = arglist[0]
+            response = um_futures_client.leverage_brackets(symbol=symbol, recvWindow=6000)
+        elif method == 'change_leverage':
+            symbol = arglist[0]
+            leverage = arglist[1]
+            response = um_futures_client.change_leverage(symbol=symbol, leverage=leverage, recvWindow=6000)
+        elif method == 'account':
+            response = um_futures_client.account()
+        elif method == 'exchange_info':
+            response = um_futures_client.exchange_info()
+
+    except ClientError as error:
+        logging.error(method + ' : ' + str(arglist) +
+            " Found error. status: {}, error code: {}, error message: {}".format(
+                error.status_code, error.error_code, error.error_message
+            )
+        )
+    except Exception as e:
+        logging.error(method + ' : ' + str(arglist) +
+            " Found Exception. e: {}".format(
+                str(e)
+            )
+        )
+    return response
 
 
 def load_history_pkl():
@@ -209,26 +290,14 @@ def print_condition():
     logger.info('reset_leverage: %s' % reset_leverage)
     logger.info('-------------------------------')
 
-client = None
-if not futures:
-    # basic
-    client_basic = Client("basic_secret_key", "basic_secret_value")
-    client = client_basic
-else:
-    # futures
-    client_futures = Client("futures_secret_key", "futures_secret_value")
-    client = client_futures
 
-symbols = list()
-
-## binance symbols
+# symbols = list()
 symbols_binance_futures = []
 symbols_binance_futures_USDT = []
 symbols_binance_futures_BUSD = []
 symbols_binance_futures_USDT_BUSD = []
 
-exchange_info = client.futures_exchange_info()
-
+exchange_info = api_call('exchange_info', [])
 
 for s in exchange_info['symbols']:
     if s['contractType'] == 'PERPETUAL' and s['symbol'][-4:] == 'USDT':
@@ -238,7 +307,6 @@ for s in exchange_info['symbols']:
         symbols_binance_futures_BUSD.append(s['symbol'])
         symbols_binance_futures_USDT_BUSD.append(s['symbol'])
     symbols_binance_futures.append(s['symbol'])
-
 
 
 def get_symbols():
@@ -259,111 +327,6 @@ def get_symbols():
     logger.info(str(len(symbols)) + ':' + str(symbols))
     return symbols
 
-import threading
-import functools
-import time
-
-def synchronized(wrapped):
-    lock = threading.Lock()
-    @functools.wraps(wrapped)
-    def _wrap(*args, **kwargs):
-        with lock:
-            result = wrapped(*args, **kwargs)
-            return result
-    return _wrap
-
-
-
-def date_to_milliseconds(date_str: str) -> int:
-    """Convert UTC date to milliseconds
-
-    If using offset strings add "UTC" to date string e.g. "now UTC", "11 hours ago UTC"
-
-    See dateparse docs for formats http://dateparser.readthedocs.io/en/latest/
-
-    :param date_str: date in readable format, i.e. "January 01, 2018", "11 hours ago UTC", "now UTC"
-    """
-    # get epoch value in UTC
-    epoch: datetime = datetime.utcfromtimestamp(0).replace(tzinfo=pytz.utc)
-    # parse our date string
-    d: Optional[datetime] = dateparser.parse(date_str, settings={'TIMEZONE': "UTC"})
-    # if the date is not timezone aware apply UTC timezone
-    if d.tzinfo is None or d.tzinfo.utcoffset(d) is None:
-        d = d.replace(tzinfo=pytz.utc)
-
-    # return the difference in time
-    return int((d - epoch).total_seconds() * 1000.0)
-
-@synchronized
-def get_historical_ohlc_data_start_end(symbol, start_int, end_int, past_days=None, interval=None, futures=False):
-    D = None
-    start_date_str = None
-    end_date_str = None
-    try:
-        """Returns historcal klines from past for given symbol and interval
-        past_days: how many days back one wants to download the data"""
-        # if not futures:
-        #     # basic
-        #     client_basic = Client("basic_secret_key",
-        #                           "basic_secret_value")
-        #     client = client_basic
-        # else:
-        #     # futures
-        #     client_futures = Client("futures_secret_key",
-        #                             "futures_secret_value")
-        #     client = client_futures
-
-        if not interval:
-            interval = '1h'  # default interval 1 hour
-        if not past_days:
-            past_days = 30  # default past days 30.
-
-        start_date_str = str((pd.to_datetime('today') - pd.Timedelta(str(start_int) + ' days')).date())
-        if end_int:
-            end_date_str = str((pd.to_datetime('today') - pd.Timedelta(str(end_int) + ' days')).date())
-        else:
-            end_date_str = None
-        try:
-            if exchange_symbol == 'binance_usdt_perp' or exchange_symbol == 'binance_busd_perp' or exchange_symbol == 'binance_usdt_busd_perp':
-                if futures:
-                    D = pd.DataFrame(
-                        client.futures_historical_klines(symbol=symbol, start_str=start_date_str, end_str=end_date_str, interval=interval))
-                else:
-                    D = pd.DataFrame(client.get_historical_klines(symbol=symbol, start_str=start_date_str, end_str=end_date_str, interval=interval))
-
-        except Exception as e:
-            time.sleep(0.5)
-            logger.error(str(e))
-            return D, start_date_str, end_date_str
-
-        if D is not None and D.empty:
-            return D, start_date_str, end_date_str
-
-        D.columns = ['open_time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades',
-                     'taker_base_vol', 'taker_quote_vol', 'is_best_match']
-        D['open_date_time'] = [dt.datetime.fromtimestamp(x / 1000) for x in D.open_time]
-        D['symbol'] = symbol
-        D = D[['symbol', 'open_date_time', 'open', 'high', 'low', 'close', 'volume', 'num_trades', 'taker_base_vol',
-               'taker_quote_vol']]
-        D.rename(columns={
-                            "open_date_time": "Date",
-                            "open": "Open",
-                            "high": "High",
-                            "low": "Low",
-                            "close": "Close",
-                            "volume": "Volume",
-                          }, inplace=True)
-        new_names = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
-        D['Date'] = D['Date'].astype(str)
-        D['Open'] = D['Open'].astype(float)
-        D['High'] = D['High'].astype(float)
-        D['Low'] = D['Low'].astype(float)
-        D['Close'] = D['Close'].astype(float)
-        D['Volume'] = D['Volume'].astype(float)
-        D = D[new_names]
-    except Exception as e:
-        pass
-    return D, start_date_str, end_date_str
 
 def get_fetch_dohlcv(symbol,
                      # start_int,
@@ -372,7 +335,8 @@ def get_fetch_dohlcv(symbol,
                      limit=500):
     # startTime = start_int
     # endTime = end_int
-    datalist = um_futures_client.klines(symbol, interval, limit=limit)
+    # datalist = um_futures_client.klines(symbol, interval, limit=limit)
+    datalist = api_call('klines', [symbol, interval, limit])
     D = pd.DataFrame(datalist)
     D.columns = ['open_time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades',
                  'taker_base_vol', 'taker_quote_vol', 'is_best_match']
@@ -398,6 +362,7 @@ def get_fetch_dohlcv(symbol,
     D = D[new_names]
     return D
 
+
 def fractals_low_loopB(df, loop_count=1):
     for c in range(loop_count):
         i = Indicators(df)
@@ -408,6 +373,7 @@ def fractals_low_loopB(df, loop_count=1):
         df = df.drop(['fractals_high', 'fractals_low'], axis=1)
     return df
 
+
 def fractals_low_loopA(df, fcnt=51, loop_count=1):
     for c in range(loop_count):
         window = 2 * fcnt + 1
@@ -416,6 +382,7 @@ def fractals_low_loopA(df, fcnt=51, loop_count=1):
         df = df.dropna()
         df = df.drop(['fractals_low'], axis=1)
     return df
+
 
 def fractals_high_loopA(df, fcnt=5, loop_count=1):
     for c in range(loop_count):
@@ -426,50 +393,22 @@ def fractals_high_loopA(df, fcnt=5, loop_count=1):
         df = df.drop(['fractals_high'], axis=1)
     return df
 
+
 def sma(source, period):
     return pd.Series(source).rolling(period).mean().values
+
 
 def sma_df(df, period=7):
     i = Indicators(df)
     i.sma(period=7)
     return i.df
 
-def new_batch_order(params):
-    try:
-        response = um_futures_client.new_batch_order(params)
-        # logger.info(response)
-    except ClientError as error:
-        logger.error(
-            "Found error. status: {}, error code: {}, error message: {}".format(
-                error.status_code, error.error_code, error.error_message
-            )
-        )
-        return None
-    except Exception as e:
-        logger.error(
-            "Found error. status: {}, error code: {}, error message: {}".format(
-                e.status_code, e.error_code, e.error_message
-            )
-        )
-        # try one more
-        try:
-            time.sleep(0.1)  # 0.1초
-            response = um_futures_client.new_batch_order(params)
-            # logger.info(response)
-        except Exception as e:
-            logger.error(e)
-
-        return None
-
-    return response
-
-
-
 
 def get_precision(symbol):
     for x in exchange_info['symbols']:
         if x['symbol'] == symbol:
             return x['quantityPrecision']
+
 
 def set_price(symbol, price, longshort):
     e_info = exchange_info['symbols']  # pull list of symbols
@@ -481,8 +420,10 @@ def set_price(symbol, price, longshort):
             # cost = cost - float(a) if longshort else cost + float(a)
             return cost
 
+
 def my_available_balance(s, exchange_symbol):
-    response = um_futures_client.balance(recvWindow=6000)
+    # response = um_futures_client.balance(recvWindow=6000)
+    response = api_call('balance', [])
     if exchange_symbol == 'binance_usdt_busd_perp':
         if s[-4:] == 'USDT':
             my_marginavailable_l = [x['marginAvailable'] for x in response if x['asset'] == 'USDT']
@@ -591,8 +532,8 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
         logger.info(symbol + ' _entry_price == sl_price')
         return
 
-    # df_active = df[w.idx_end + 1:]
-    # df_active = df[w.idx_end:]
+    # df_active = df[w.idx_end + 1:]  --> this is right
+    # df_active = df[w.idx_end:]  --> wrong
 
     wave5_datetime = w.dates[-1]
     # df_active = df[w.idx_end + 1:]
@@ -656,7 +597,7 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
     #                         (current_price < entry_price and current_price > target_price)
 
     # check order or position
-    current_price = float(um_futures_client.ticker_price(symbol)['price'])
+    current_price = float(api_call('ticker_price', [symbol])['price'])
     # c_current_price = (current_price >= entry_price and current_price < half_entry_target) \
     #                         if longshort else \
     #                         (current_price <= entry_price and current_price > half_entry_target)
@@ -720,10 +661,10 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
                 h_tp_orderId = history['tp_orderId']
 
                 if h_limit_orderId:
-                    r_query_limit = um_futures_client.query_order(symbol=symbol,
-                                                                  orderId=h_limit_orderId,
-                                                                  recvWindow=6000)
-
+                    # r_query_limit = um_futures_client.query_order(symbol=symbol,
+                    #                                               orderId=h_limit_orderId,
+                    #                                               recvWindow=6000)
+                    r_query_limit = api_call('query_order', [symbol, h_limit_orderId])
                     if r_query_limit['status'] == 'FILLED':
                         # 대상외
                         return
@@ -748,7 +689,8 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
                     "newClientOrderId": 'limit_' + str(sl_price) + '_' + str(target_price),
                 }
             ]
-            result_limit = new_batch_order(params)
+            # result_limit = new_batch_order(params)
+            result_limit = api_call('new_batch_order', [params])
             for order_limit in result_limit:
                 try:
                     if order_limit['orderId']:
@@ -768,7 +710,8 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
                                 "newClientOrderId": "sl_" + str(order_limit['orderId']),
                             }
                         ]
-                        result_sl = new_batch_order(params)
+                        # result_sl = new_batch_order(params)
+                        result_sl = api_call('new_batch_order', [params])
 
                         for order_sl in result_sl:
                             try:
@@ -809,10 +752,11 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
                                 logger.error(symbol + ' _FAIL SL NEW order :' + str(e))
                                 logger.error(symbol + 'result_sl:' + str(result_sl))
                                 # 2-1. when new_order STOP_MARKET's fail cancel LIMIT order
-                                response = um_futures_client.cancel_batch_order(
-                                    symbol=symbol, orderIdList=[order_limit['orderId']], origClientOrderIdList=[],
-                                    recvWindow=6000
-                                )
+                                # response = um_futures_client.cancel_batch_order(
+                                #     symbol=symbol, orderIdList=[order_limit['orderId']], origClientOrderIdList=[],
+                                #     recvWindow=6000
+                                # )
+                                response = api_call('cancel_batch_order', [symbol, [order_limit['orderId']], []])
 
                                 for order_tp in response:
                                     try:
@@ -827,10 +771,11 @@ def blesstrade_new_limit_order(df, symbol, fcnt, longshort, df_lows_plot, df_hig
                     logger.error(symbol + ':' + str(e))
                     logger.error(symbol + ' _LIMIT_new order error, result_limit:' + str(result_limit))
 
-                    response = um_futures_client.cancel_batch_order(
-                        symbol=symbol, orderIdList=[order_limit['orderId']], origClientOrderIdList=[],
-                        recvWindow=6000
-                    )
+                    # response = um_futures_client.cancel_batch_order(
+                    #     symbol=symbol, orderIdList=[order_limit['orderId']], origClientOrderIdList=[],
+                    #     recvWindow=6000
+                    # )
+                    response = api_call('cancel_batch_order', [symbol, [order_limit['orderId']], []])
 
                     for order_tp in response:
                         try:
@@ -991,9 +936,10 @@ def loopsymbol(tf, symbol, i):
                                         r_query_status = None
 
                                         if h_limit_orderId:
-                                            r_query_limit = um_futures_client.query_order(symbol=symbol,
-                                                                                          orderId=h_limit_orderId,
-                                                                                          recvWindow=6000)
+                                            # r_query_limit = um_futures_client.query_order(symbol=symbol,
+                                            #                                               orderId=h_limit_orderId,
+                                            #                                               recvWindow=6000)
+                                            r_query_limit = api_call('query_order', [symbol, h_limit_orderId])
 
                                             r_q_longshort = True if r_query_limit['positionSide'] == 'LONG' else False
                                             r_query_status = r_query_limit['status']
@@ -1029,7 +975,9 @@ def new_tp_order(symbol, longshort, target, quantity, limit_orderId):
             "newClientOrderId": 'tp_' + str(limit_orderId)
         }
     ]
-    result_tp = new_batch_order(params)
+    # result_tp = new_batch_order(params)
+    result_tp = api_call('new_batch_order', [params])
+
     for order_tp in result_tp:
         try:
             if order_tp['orderId']:
@@ -1039,17 +987,21 @@ def new_tp_order(symbol, longshort, target, quantity, limit_orderId):
         except Exception as e:
             try:
                 if order_tp['code'] == -2021:  # [{'code': -2021, 'msg': 'Order would immediately trigger.'}]
-                    current_price = float(um_futures_client.ticker_price(symbol)['price'])
+                    # current_price = float(um_futures_client.ticker_price(symbol)['price'])
+                    current_price = float(api_call('ticker_price', [symbol])['price'])
+
                     compare_price_flg = current_price > target if longshort else current_price < target
                     if compare_price_flg:
-                        order_market = um_futures_client.new_order(
-                            symbol=symbol,
-                            side="SELL" if longshort else "BUY",
-                            positionSide="LONG" if longshort else "SHORT",
-                            type="MARKET",
-                            quantity=quantity,
-                            newClientOrderId="tp_" + str(limit_orderId)
-                        )
+                        # order_market = um_futures_client.new_order(
+                        #     symbol=symbol,
+                        #     side="SELL" if longshort else "BUY",
+                        #     positionSide="LONG" if longshort else "SHORT",
+                        #     type="MARKET",
+                        #     quantity=quantity,
+                        #     newClientOrderId="tp_" + str(limit_orderId)
+                        # )
+                        order_market = api_call('new_order', [symbol, "SELL" if longshort else "BUY", "LONG" if longshort else "SHORT", "MARKET", quantity, "tp_" + str(limit_orderId)])
+
                         if order_market['orderId']:
                             logger.info(symbol + ' _TP MARKET over TP -> success')
                             update_history_by_limit_id(open_order_history, symbol, 'WIN', limit_orderId)
@@ -1064,24 +1016,28 @@ def new_tp_order(symbol, longshort, target, quantity, limit_orderId):
 
 
 def cancel_batch_order(symbol, order_id_l, desc):
+    rtflg = False
     try:
-        response = um_futures_client.cancel_batch_order(
-            symbol=symbol, orderIdList=order_id_l, origClientOrderIdList=[],
-            recvWindow=6000
-        )
+        # response = um_futures_client.cancel_batch_order(
+        #     symbol=symbol, orderIdList=order_id_l, origClientOrderIdList=[],
+        #     recvWindow=6000
+        # )
+        response = api_call('cancel_batch_order', [symbol, order_id_l, []])
+
         if len(response) > 0:
-            try:
-                if response[0]['orderId']:
-                    logger.info(symbol + (' _CANCEL BATCH ORDER success, %s : ' % desc) + str(response))
-                    return True
-            except Exception as e:
-                if response[0]['code']:
-                    logger.error(symbol + (' _CANCEL BATCH ORDER error, %s : ' % desc) + str(response[0]['msg']))
-                    return False
+            for rs in response:
+                try:
+                    if rs['orderId']:
+                        logger.info(symbol + (' _CANCEL BATCH ORDER success, %s : ' % desc) + str(rs))
+                        rtflg = True
+                except Exception as e:
+                    if rs['code']:
+                        logger.error(symbol + (' _CANCEL BATCH ORDER error, %s : ' % desc) + str(rs['msg']))
+                        return False
     except Exception as e:
-        logger.error(symbol + (' _CANCEL BATCH ORDER Exception Exception error, %s :' % desc) + str(e))
+        logger.error(symbol + ', order_id_l: ' + str(order_id_l) + ' ' + (' _CANCEL BATCH ORDER Exception Exception error, %s :' % desc) + str(e))
         return False
-    return False
+    return rtflg
 
 
 def update_history_status(open_order_history, symbol, h_id, new_status):
@@ -1110,7 +1066,8 @@ def delete_history_status(open_order_history, symbol, h_id, event):
 def monitoring_orders_positions(symbol):
     try:
         # 1. check all orders
-        all_orders = um_futures_client.get_all_orders(symbol=symbol, recvWindow=6000)
+        # all_orders = um_futures_client.get_all_orders(symbol=symbol, recvWindow=6000)
+        all_orders = api_call('get_all_orders', [symbol])
 
         # 2. filter stop loss
         new_sles = [x for x in all_orders if (x['status'] == 'NEW' and x['type'] == 'STOP_MARKET' and x['clientOrderId'][:3] == 'sl_')]
@@ -1121,9 +1078,10 @@ def monitoring_orders_positions(symbol):
                 limit_orderId = new_sl['clientOrderId'][3:]  # trace limit's orderId by 'sl_limitOrderId'
 
                 # 3. check limit status
-                r_query_limit = um_futures_client.query_order(symbol=symbol,
-                                                              orderId=limit_orderId,
-                                                              recvWindow=6000)
+                # r_query_limit = um_futures_client.query_order(symbol=symbol,
+                #                                               orderId=limit_orderId,
+                #                                               recvWindow=6000)
+                r_query_limit = api_call('query_order', [symbol, limit_orderId])
 
                 if r_query_limit['status'] == 'PARTIALLY_FILLED':
                     target_price = r_query_limit['clientOrderId'].split('_')[2]  # target_price
@@ -1153,39 +1111,6 @@ def monitoring_orders_positions(symbol):
                             )
                         )
 
-                    # try:
-                    #     order_market = um_futures_client.new_order(
-                    #         symbol=symbol,
-                    #         side="SELL" if longshort else "BUY",
-                    #         positionSide="LONG" if longshort else "SHORT",
-                    #         type="MARKET",
-                    #         quantity=quantity,
-                    #         newClientOrderId="tp_" + str(limit_orderId)
-                    #     )
-                    #     if order_market['orderId']:
-                    #         logger.info(symbol + ' _PARTIALLY_FILLED_FORCE_MARKET_TAKE_PROFIT new order success, order_market:' + str(order_market))
-                    #         update_history_by_limit_id(open_order_history, symbol, 'DONE', limit_orderId)
-                    #
-                    #         # # # force cancel limit(o), sl(x)
-                    #         try:
-                    #             # success_cancel = cancel_batch_order(symbol, [limit_orderId, sl_orderId], 'descxxxx')
-                    #             success_cancel = cancel_batch_order(symbol, [int(limit_orderId), sl_orderId], '_TP_PARTIALLY_FILLED_AND_CANCEL ONLY limit_orderId')
-                    #
-                    #             if success_cancel:
-                    #                 update_history_by_limit_id(open_order_history, symbol,
-                    #                                            'DONE', limit_orderId)
-                    #         except Exception as e:
-                    #             logging.error(
-                    #                 "Found monitoring_orders_positions/_PARTIALLY_FILLED_FORCE_cancel_batch_order error. symbol: {}, status: {}, error code: {}, error message: {}".format(
-                    #                     symbol, e.status_code, e.error_code, e.error_message
-                    #                 )
-                    #             )
-                    # except Exception as e:
-                    #     logging.error(
-                    #         "Found monitoring_orders_positions/_PARTIALLY_FILLED_FORCE_MARKET_TAKE_PROFIT new order error. symbol: {}, status: {}, error code: {}, error message: {}".format(
-                    #             symbol, e.status_code, e.error_code, e.error_message
-                    #         )
-                    #     )
 
                 elif r_query_limit['status'] == 'FILLED':
                     limit_string = r_query_limit['clientOrderId'].split('_')[0]  # limit_string
@@ -1212,11 +1137,14 @@ def monitoring_orders_positions(symbol):
                                     )
                                 )
 
-                                result_position = um_futures_client.get_position_risk(symbol=symbol, recvWindow=6000)
+                                # result_position = um_futures_client.get_position_risk(symbol=symbol, recvWindow=6000)
+                                result_position = api_call('get_position_risk', [symbol])
                                 result_position_filtered = [x for x in result_position if x['entryPrice'] != '0.0']
                                 if len(result_position_filtered) > 0:  # 2. if in position
                                     for p in result_position_filtered:
-                                        all_orders = um_futures_client.get_all_orders(symbol=symbol, recvWindow=6000)
+                                        # all_orders = um_futures_client.get_all_orders(symbol=symbol, recvWindow=6000)
+                                        all_orders = api_call('get_all_orders', [symbol])
+
                                         filled_limits = [x for x in all_orders if (
                                                     x['status'] == 'FILLED' and x['type'] == 'LIMIT' and x['price'] == p['entryPrice'])]
                                         if len(filled_limits) > 0:
@@ -1224,14 +1152,19 @@ def monitoring_orders_positions(symbol):
                                                 limit_orderId = filled_limit['orderId']
                                                 longshort = True if filled_limit['positionSide'] == 'LONG' else False
                                                 quantity = str(abs(float(p['positionAmt'])))
-                                                order_market = um_futures_client.new_order(
-                                                    symbol=symbol,
-                                                    side="SELL" if longshort else "BUY",
-                                                    positionSide="LONG" if longshort else "SHORT",
-                                                    type="MARKET",
-                                                    quantity=quantity,
-                                                    newClientOrderId="tp_" + str(limit_orderId)
-                                                )
+                                                # order_market = um_futures_client.new_order(
+                                                #     symbol=symbol,
+                                                #     side="SELL" if longshort else "BUY",
+                                                #     positionSide="LONG" if longshort else "SHORT",
+                                                #     type="MARKET",
+                                                #     quantity=quantity,
+                                                #     newClientOrderId="tp_" + str(limit_orderId)
+                                                # )
+                                                order_market = api_call('new_order',
+                                                                        [symbol, "SELL" if longshort else "BUY",
+                                                                         "LONG" if longshort else "SHORT", "MARKET",
+                                                                         quantity, "tp_" + str(limit_orderId)])
+
                                                 if order_market['orderId']:
                                                     logger.info(symbol + ' FORCE MARKET BY ONLY POSI WITH NO SL_TP' + str(p))
                                                     update_history_by_limit_id(open_order_history, symbol, 'DRAW',
@@ -1258,12 +1191,16 @@ def set_status_manager_when_new_or_tp(tf, symbol):
             h_tp_orderId = history['tp_orderId']
 
 
-            r_query_limit = um_futures_client.query_order(symbol=symbol,
-                                                          orderId=h_limit_orderId,
-                                                          recvWindow=6000)
-            r_query_sl = um_futures_client.query_order(symbol=symbol,
-                                                          orderId=h_sl_orderId,
-                                                          recvWindow=6000)
+            # r_query_limit = um_futures_client.query_order(symbol=symbol,
+            #                                               orderId=h_limit_orderId,
+            #                                               recvWindow=6000)
+            r_query_limit = api_call('query_order', [symbol, h_limit_orderId])
+
+            # r_query_sl = um_futures_client.query_order(symbol=symbol,
+            #                                               orderId=h_sl_orderId,
+            #                                               recvWindow=6000)
+            r_query_sl = api_call('query_order', [symbol, h_sl_orderId])
+
             limit_string = r_query_limit['clientOrderId'].split('_')[0]  # limit_string
             limit_origQty = float(r_query_limit['origQty'])  # origQty
             limit_executedQty = float(r_query_limit['executedQty'])  # executedQty
@@ -1271,9 +1208,11 @@ def set_status_manager_when_new_or_tp(tf, symbol):
             # CASE ON TP
             if h_tp_orderId and limit_string == 'limit' and (limit_origQty == limit_executedQty):  # case of full qty filled
 
-                r_query_tp = um_futures_client.query_order(symbol=symbol,
-                                                              orderId=h_tp_orderId,
-                                                              recvWindow=6000)
+                # r_query_tp = um_futures_client.query_order(symbol=symbol,
+                #                                               orderId=h_tp_orderId,
+                #                                               recvWindow=6000)
+                r_query_tp = api_call('query_order', [symbol, h_tp_orderId])
+
                 if r_query_limit['status'] == 'FILLED' and r_query_sl['status'] == 'NEW' and r_query_tp['status'] == 'NEW':
                     return
                 if r_query_limit['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED' and r_query_tp['status'] == 'EXPIRED':
@@ -1297,15 +1236,29 @@ def set_status_manager_when_new_or_tp(tf, symbol):
                         target_price - entry_price) / 2 if longshort else entry_price - abs(
                         target_price - entry_price) / 2
 
-                    current_price = float(um_futures_client.ticker_price(symbol)['price'])
+                    # current_price = float(um_futures_client.ticker_price(symbol)['price'])
+                    current_price = float(api_call('ticker_price', [symbol])['price'])
+
                     c_current_price_on_outzone = current_price > half_entry_target if longshort else current_price < half_entry_target
 
                     if c_current_price_on_outzone:
                         # OUTZONE
-                        success_cancel = cancel_batch_order(symbol, [r_query_limit['orderId'], h_sl_orderId], 'set_status/else OUTZONE')
-                        if success_cancel:
-                            delete_history_status(open_order_history, symbol, h_id, 'N-N-OUTZONE')
+                        # r_query_limit = um_futures_client.query_order(symbol=symbol,
+                        #                                               orderId=h_limit_orderId,
+                        #                                               recvWindow=6000)
+                        r_query_limit = api_call('query_order', [symbol, h_limit_orderId])
 
+                        if r_query_limit['status'] != 'NEW':  # one more check
+                            pass
+                        if r_query_limit['status'] == 'NEW':
+                            success_cancel = cancel_batch_order(symbol, [r_query_limit['orderId'], h_sl_orderId], 'set_status/else OUTZONE')
+                            if success_cancel:
+                                delete_history_status(open_order_history, symbol, h_id, 'N-N-OUTZONE')
+                            else:  # when error case, check all order status
+                                # response = um_futures_client.get_all_orders(symbol=symbol, recvWindow=6000)
+                                response = api_call('get_all_orders', [symbol])
+                                df_symbol_orders = pd.DataFrame.from_records(response)
+                                pass
                     ###################
                     # case2. beyond
                     ###################
@@ -1361,7 +1314,8 @@ def set_status_manager_when_new_or_tp(tf, symbol):
                     return
 
                 if (r_query_limit['status'] == 'FILLED' or r_query_limit['status'] == 'CANCELED') and r_query_sl['status'] == 'NEW':
-                    result_position = um_futures_client.get_position_risk(symbol=symbol, recvWindow=6000)
+                    # result_position = um_futures_client.get_position_risk(symbol=symbol, recvWindow=6000)
+                    result_position = api_call('get_position_risk', [symbol])
                     result_position_filtered = [x for x in result_position if x['entryPrice'] != '0.0']
                     if len(result_position_filtered) == 0:  # no position
                         success_cancel = cancel_batch_order(symbol, [str(h_sl_orderId)], 'set_status/F-N-DONE')
@@ -1397,12 +1351,16 @@ def set_maxleverage_allsymbol(symbols):
     logger.info('set  set_maxleverage_allsymbol start')
     for symbol in symbols:
         try:
-            r = um_futures_client.leverage_brackets(symbol=symbol, recvWindow=6000)
+            # r = um_futures_client.leverage_brackets(symbol=symbol, recvWindow=6000)
+            r = api_call('leverage_brackets', [symbol])
             max_leverage = r[0]['brackets'][0]['initialLeverage']
             time.sleep(0.2)
-            rt = um_futures_client.change_leverage(
-                symbol=symbol, leverage=max_leverage, recvWindow=6000
-            )
+
+            # rt = um_futures_client.change_leverage(
+            #     symbol=symbol, leverage=max_leverage, recvWindow=6000
+            # )
+            rt = api_call('change_leverage', [symbol, max_leverage])
+
             logger.info(rt)
         except ClientError as error:
             logger.error(
@@ -1414,7 +1372,9 @@ def set_maxleverage_allsymbol(symbols):
 
 
 def cancel_all_positions():
-    positions = um_futures_client.account()['positions']
+    # positions = um_futures_client.account()['positions']
+    positions = api_call('account', [])['positions']
+
     result_position_filtered = [x for x in positions if x['entryPrice'] != '0.0']
     print(result_position_filtered)
     for p in result_position_filtered:
@@ -1422,14 +1382,18 @@ def cancel_all_positions():
         s = p['symbol']
         longshort = True if p['positionSide'] == 'LONG' else False
         quantity = str(abs(float(p['positionAmt'])))
-        order_market = um_futures_client.new_order(
-            symbol=s,
-            side="SELL" if longshort else "BUY",
-            positionSide="LONG" if longshort else "SHORT",
-            type="MARKET",
-            quantity=quantity,
-            newClientOrderId="tp_10101010101"
-        )
+        # order_market = um_futures_client.new_order(
+        #     symbol=s,
+        #     side="SELL" if longshort else "BUY",
+        #     positionSide="LONG" if longshort else "SHORT",
+        #     type="MARKET",
+        #     quantity=quantity,
+        #     newClientOrderId="tp_1010101010"
+        # )
+        order_market = api_call('new_order',
+                                [s, "SELL" if longshort else "BUY",
+                                 "LONG" if longshort else "SHORT", "MARKET",
+                                 quantity, "tp_" + str(1010101010)])
         logging.info('cancel_all_positions %s: %s ' % (s, str(order_market)))
 
 
@@ -1437,11 +1401,14 @@ def cancel_all_open_orders(symbols):
     for s in symbols:
         try:
             time.sleep(0.5)
-            all_orders = um_futures_client.get_all_orders(symbol=s, recvWindow=6000)
+            # all_orders = um_futures_client.get_all_orders(symbol=s, recvWindow=6000)
+            all_orders = api_call('get_all_orders', [s])
+
             newes = [x for x in all_orders if (x['status'] == 'NEW')]
             if len(newes) > 0:
                 time.sleep(0.5)
-                response = um_futures_client.cancel_open_orders(symbol=s, recvWindow=6000)
+                # response = um_futures_client.cancel_open_orders(symbol=s, recvWindow=6000)
+                response = api_call('cancel_open_orders', [s])
                 logging.info('cancel_all_open_orders %s: %s ' % (s, str(response)))
         except ClientError as error:
             logging.error(
