@@ -195,15 +195,17 @@ def api_call(method, arglist, **kwargs):
         elif method == 'query_order':
             symbol = arglist[0]
             orderId = arglist[1]
-            response = um_futures_client.query_order(symbol=symbol, orderId=orderId, recvWindow=6000)
+            try:
+                response = um_futures_client.query_order(symbol=symbol, orderId=orderId, recvWindow=6000)
+            except:
+                return None
         elif method == 'get_open_orders':
             symbol = arglist[0]
             orderId = arglist[1]
             try:
                 response = um_futures_client.get_open_orders(symbol=symbol, orderId=orderId, recvWindow=6000)
-            except ClientError as error:
-                if error.status_code == 400 and error.error_code == -2013:  # error message: Order does not exist
-                    return None
+            except:
+                return None
         elif method == 'get_all_orders':
             symbol = arglist[0]
             response = um_futures_client.get_all_orders(symbol=symbol, recvWindow=6000)
@@ -558,7 +560,7 @@ def cancel_batch_order(symbol, order_id_l, desc):
         for rs in response:
             try:
                 if rs['orderId']:
-                    logger.info(symbol + (' _CANCELBATCH success, %s : ' % desc) + str(rs))
+                    # logger.info(symbol + (' _CANCELBATCH success, %s : ' % desc) + str(rs))
                     cnt_success += 1
             except:
                 if rs['code']:
@@ -931,7 +933,7 @@ def update_history_status(open_order_history, symbol, h_id, new_status):
         history_id['status'] = new_status  # update new status
         history_id['update_datetime'] = dt.datetime.now()
         open_order_history[history_idx] = history_id  # replace history
-        logger.info(symbol + ' _HS update_history_status %s:' % new_status)
+        logger.info(symbol + ' _HS update_history_status id: %s status: %s:' % (str(h_id), new_status))
         dump_history_pkl()
 
 
@@ -943,165 +945,20 @@ def delete_history_status(open_order_history, symbol, h_id, event):
         dump_history_pkl()
 
 
-# def symbol_orders_df(symbol):
-#     response = api_call('get_all_orders', [symbol])
-#     if response:
-#         df = pd.DataFrame.from_records(response)
-#         df['sid'] = df.apply(lambda x: x['symbol'] + '_' + str(x['orderId']), axis=1)
-#         df['time_dt'] = df.apply(
-#             lambda x: str(dt.datetime.fromtimestamp(float(x['time']) / 1000).strftime('%Y-%m-%d %H:%M:%S')), axis=1)
-#         df['updateTime_dt'] = df.apply(
-#             lambda x: str(dt.datetime.fromtimestamp(float(x['updateTime']) / 1000).strftime('%Y-%m-%d %H:%M:%S')), axis=1)
-#         df['date'] = df.apply(lambda x: str(dt.datetime.fromtimestamp(float(x['time']) / 1000).strftime('%Y-%m-%d')), axis=1)
-#         df.sort_values(by='time_dt', ascending=False, inplace=True)  # https://sparkbyexamples.com/pandas/sort-pandas-dataframe-by-date/
-#         try:
-#             def f_clientOrderId(x):
-#                 if x.split('_')[0] == 'tp':
-#                     if len(x.split('_')) == 4:
-#                         return x.split('_')[3]
-#                     else:
-#                         return x.split('_')[1]
-#                 elif x.split('_')[0] == 'sl':
-#                     if len(x.split('_')) == 4:
-#                         return x.split('_')[3]
-#                     else:
-#                         return x.split('_')[1]
-#                 elif x.split('_')[0] == 'limit':
-#                     return x
-#             df['gid'] = df['clientOrderId'].map(f_clientOrderId)
-#             df['gid'] = df.apply(lambda x: str(x['orderId']) if x['clientOrderId'] == x['gid'] else x['gid'], axis=1)
-#             df['gid'] = df['gid'].apply(str)
-#             df.drop(df[(df['gid'] == '1010101010')].index, inplace=True)
-#             df.drop(df[(df['gid'] == '10101010101')].index, inplace=True)
-#             df.drop(df[(df['gid'] == 'None')].index, inplace=True)
-#             df['gid'] = df['gid'].apply(int)
-#
-#             def f_action(x):
-#                 if x.split('_')[0] == 'tp':
-#                     return 'TP'
-#                 elif x.split('_')[0] == 'sl':
-#                     return 'SL'
-#                 elif x.split('_')[0] == 'limit':
-#                     return 'ET'
-#             df['action'] = df['clientOrderId'].map(f_action)
-#         except Exception as e:
-#             print('xxxx' + str(e))
-#         return df
-#     return None
-#
-#
-# def action_event(df):
-#     glist = df['gid'].to_list()
-#     glist = list(dict.fromkeys(glist))
-#     for gid in glist:
-#         df_et = df.query("gid == %s and action == 'ET'" % gid)
-#         df_sl = df.query("gid == %s and action == 'SL'" % gid)
-#         df_tp = df.query("gid == %s and action == 'TP'" % gid)
-#         status_et = df_et['status'].iat[0] if not df_et.empty else ''
-#         status_sl = df_sl['status'].iat[0] if not df_sl.empty else ''
-#         status_tp = df_tp['status'].iat[0] if not df_tp.empty else ''
-#
-#         try:
-#             if not df_et.empty:
-#                 et_orderId = df_et['orderId'].iat[0]
-#                 symbol = df_et['symbol'].iat[0]
-#
-#                 # case no event
-#                 if status_et == 'CANCELED' and status_sl == 'CANCELED' and status_tp == '':
-#                     pass
-#                 elif status_et == 'CANCELED' and status_sl == 'EXPIRED' and status_tp == 'EXPIRED':
-#                     pass
-#                 elif status_et == 'CANCELED' and status_sl == 'EXPIRED' and status_tp == 'FILLED':
-#                     pass
-#                 elif status_et == 'CANCELED' and status_sl == '' and status_tp == '':
-#                     # ??? need CHECK
-#                     pass
-#                 elif status_et == 'FILLED' and status_sl == 'FILLED' and status_tp == '':  # order (limit, sl) -> no tp order -> filled sl
-#                     # ??? need HT LOG
-#                     pass
-#                 elif status_et == 'FILLED' and status_sl == 'FILLED' and status_tp == 'EXPIRED':
-#                     pass
-#                 elif status_et == 'FILLED' and status_sl == 'CANCELED' and status_tp == 'FILLED':
-#                     # check history TP and update history xxxxxxx
-#                     pass
-#                 elif status_et == 'FILLED' and status_sl == 'CANCELED' and status_tp == 'EXPIRED':
-#                     pass
-#                 elif status_et == 'FILLED' and status_sl == 'CANCELED' and status_tp == 'CANCELED':
-#                     pass
-#                 elif status_et == 'FILLED' and status_sl == 'CANCELED' and status_tp == '':
-#                     # ??? CHECK ???
-#                     pass
-#                 elif status_et == 'FILLED' and status_sl == 'EXPIRED':
-#                     pass
-#                 elif status_et == 'FILLED' and status_sl == 'EXPIRED' and status_tp == 'EXPIRED':
-#                     pass
-#
-#
-#                 # case of action event
-#                 elif status_et == 'FILLED' and status_sl == 'NEW' and status_tp == '':
-#                     if len(df_et['clientOrderId'].iat[0].split('_')) >= 5:
-#                         tf = df_et['clientOrderId'].iat[0].split('_')[1]
-#                         fc = df_et['clientOrderId'].iat[0].split('_')[2]
-#                         tp_price = df_et['clientOrderId'].iat[0].split('_')[4]
-#                         longshort = True if df_et['positionSide'].iat[0] == 'LONG' else False
-#                         quantity = df_et['executedQty'].iat[0]
-#                         new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId)
-#
-#                 elif status_et == 'PARTIALLY_FILLED' and status_sl == 'NEW':
-#                     if len(df_et['clientOrderId'].iat[0].split('_')) >= 5:
-#                         tf = df_et['clientOrderId'].iat[0].split('_')[1]
-#                         fc = df_et['clientOrderId'].iat[0].split('_')[2]
-#                         tp_price = df_et['clientOrderId'].iat[0].split('_')[4]
-#                         longshort = True if df_et['positionSide'].iat[0] == 'LONG' else False
-#                         quantity = df_et['executedQty'].iat[0]
-#
-#                         success_tp_order = new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId)
-#                         if success_tp_order:
-#                             cancel_batch_order(symbol, [int(et_orderId)], 'CANCEL PARTIAL')
-#
-#                 elif status_et == 'FILLED' and status_sl == 'NEW' and status_tp == 'NEW':
-#                     # CHECK_ZONE WAIT OTHER xxxx nocase?
-#                     pass
-#                 elif status_et == 'NEW' and status_sl == 'NEW' and status_tp == '':
-#                     r_get_open_orders_et = api_call('get_open_orders', [symbol, et_orderId])
-#                     if r_get_open_orders_et:
-#                         # CHECK_ZONE
-#                         if len(df_et['clientOrderId'].iat[0].split('_')) >= 5:
-#                             et_price = df_et['price'].iat[0]
-#                             tp_price = df_et['clientOrderId'].iat[0].split('_')[4]
-#                             longshort = True if df_et['positionSide'].iat[0] == 'LONG' else False
-#                         if not c_currentprice_in_zone_by_prices(symbol, longshort, float(et_price), float(tp_price)):
-#                             # CANCEL ETSL BY OUTZONE
-#                             sl_orderId = df_sl['orderId'].iat[0]
-#                             response_cancel = cancel_batch_order(symbol, [str(et_orderId), str(sl_orderId)], 'CANCEL NEW')
-#                             if response_cancel:
-#                                 update_history_status(open_order_history, symbol, et_orderId, 'CANCEL')
-#                     else:
-#                         r_get_open_orders_sl = api_call('get_open_orders', [symbol, sl_orderId])
-#
-#
-#                 # case of CLOSE
-#                 elif status_et == 'FILLED' and status_sl == 'FILLED' and status_tp == 'NEW':
-#                     # CLOSE_TP
-#                     # action_event.append([gid, df_et, df_sl, df_tp, ['CLOSE_TP']])
-#                     pass
-#
-#                 elif status_et == 'FILLED' and status_sl == 'NEW' and status_tp == 'FILLED':
-#                     # CLOSE_SL
-#                     # action_event.append([gid, df_et, df_sl, df_tp, ['CLOSE_SL']])
-#                     pass
-#                 elif status_et == 'FILLED' and status_sl == 'CANCELED' and status_tp == 'NEW':
-#                     # FORCE_CLOSE_POSITION
-#                     # action_event.append([gid, df_et, df_sl, df_tp, ['FORCE_CLOSE_POSITION']])
-#                     pass
-#         except Exception as e:
-#             print('action_event Exception : %s ' % str(e))
-#
-#
-# def moniorders_and_action(symbol):
-#     df = symbol_orders_df(symbol)
-#     if df is not None and not df.empty:
-#         action_event(df)
+def close_position_by_symbol(symbol, quantity, longshort, et_orderId):
+    positions = api_call('account', [])['positions']
+    side = "SELL" if longshort else "BUY"
+    result_position_filtered = [x for x in positions if x['symbol'] == symbol and x['entryPrice'] != '0.0' and x['positionSide'] == side]
+    for p in result_position_filtered:
+        # quantity = str(abs(float(p['positionAmt'])))
+        order_market = api_call('new_order',
+                                [symbol, "SELL" if longshort else "BUY",
+                                 "LONG" if longshort else "SHORT", "MARKET",
+                                 quantity, "tp_" + str(et_orderId)])
+        if order_market:
+            logger.info(symbol + ' _CLOSE POSITION close_position_by_symbol success' + order_market)
+        else:
+            logger.info(symbol + ' _CLOSE POSITION close_position_by_symbol fail' + order_market)
 
 
 def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL        or       TP -> WIN or LOSE
@@ -1115,14 +972,10 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
                 tp_price = new['tp_price']
                 tf = new['timeframe']
                 longshort = new['longshort']
-                side = new['side']
                 quantity = new['quantity']
                 fc = new['fcnt']
-                try:
-                    r_get_open_orders_et = api_call('get_open_orders', [symbol, et_orderId])
-                except:
-                    r_get_open_orders_et = None
 
+                r_get_open_orders_et = api_call('get_open_orders', [symbol, et_orderId])
                 if r_get_open_orders_et:
                     if not c_currentprice_in_zone_by_prices(symbol, longshort, float(et_price), float(tp_price)):
                         # CANCEL_ETSL
@@ -1130,44 +983,13 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
                         if response_cancel:
                             update_history_status(open_order_history, symbol, et_orderId, 'CANCEL')
                 else:
-                    try:
-                        r_query_et = api_call('query_order', [symbol, et_orderId])
-                    except:
-                        r_query_et = None
-
-                    try:
-                        r_query_sl = api_call('query_order', [symbol, sl_orderId])
-                    except:
-                        r_query_sl = None
-
+                    r_query_et = api_call('query_order', [symbol, et_orderId])
+                    r_query_sl = api_call('query_order', [symbol, sl_orderId])
                     if r_query_et['status'] == 'FILLED' and r_query_sl['status'] == 'NEW':
-                        try:
-                            r_get_open_orders_sl = api_call('get_open_orders', [symbol, sl_orderId])
-                        except:
-                            r_get_open_orders_sl = None
-
+                        r_get_open_orders_sl = api_call('get_open_orders', [symbol, sl_orderId])
                         if r_get_open_orders_sl:
                             # NEW_TP
                             new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId)
-
-                        # try:
-                        #     result_position = api_call('get_position_risk', [symbol])
-                        # except:
-                        #     result_position = None
-                        # if result_position:
-                        #     result_position_filtered = [x for x in result_position if x['entryPrice'] != '0.0']
-                        #     if result_position_filtered:  # no tp and positioning
-                        #         for p in result_position_filtered:
-                        #             if side == p['positionSide'] and float(quantity) <= float(p['positionAmt']):
-                        #                 try:
-                        #                     r_get_open_orders_sl = api_call('get_open_orders', [symbol, sl_orderId])
-                        #                 except:
-                        #                     r_get_open_orders_sl = None
-                        #
-                        #                 if r_get_open_orders_sl:
-                        #                     # NEW_TP
-                        #                     new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId)
-
                     elif r_query_et['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED':
                         update_history_status(open_order_history, symbol, et_orderId, 'LOSE')
 
@@ -1178,27 +1000,48 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
                 et_orderId = tp['et_orderId']
                 sl_orderId = tp['sl_orderId']
                 tp_orderId = tp['tp_orderId']
-                try:
-                    r_get_open_orders_tp = api_call('get_open_orders', [symbol, tp_orderId])
-                except:
-                    r_get_open_orders_tp = None
+                longshort = tp['longshort']
+                quantity = tp['quantity']
 
-                if not r_get_open_orders_tp:
-                    # CASE WIN
-                    response_cancel = cancel_batch_order(symbol, [sl_orderId], 'WIN')
-                    if response_cancel:
-                        update_history_status(open_order_history, symbol, et_orderId, 'WIN')
-                else:
-                    try:
-                        r_get_open_orders_sl = api_call('get_open_orders', [symbol, sl_orderId])
-                    except:
-                        r_get_open_orders_sl = None
+                r_get_open_orders_tp = api_call('get_open_orders', [symbol, tp_orderId])
+                r_get_open_orders_tp_flg = True if r_get_open_orders_tp else False
+                r_query_tp = api_call('query_order', [symbol, tp_orderId])
 
-                    if not r_get_open_orders_sl:
-                        # CASE LOSE
-                        response_cancel = cancel_batch_order(symbol, [tp_orderId], 'LOSE')
-                        if response_cancel:
-                            update_history_status(open_order_history, symbol, et_orderId, 'LOSE')
+                r_get_open_orders_sl = api_call('get_open_orders', [symbol, sl_orderId])
+                r_get_open_orders_sl_flg = True if r_get_open_orders_sl else False
+                r_query_sl = api_call('query_order', [symbol, sl_orderId])
+
+                print(symbol, True if r_get_open_orders_tp else False, True if r_get_open_orders_sl else False, r_query_tp['status'], r_query_sl['status'])
+
+                if r_get_open_orders_tp_flg is True and r_get_open_orders_sl_flg is True and r_query_tp['status'] =='NEW' and r_query_sl['status'] == 'NEW':
+                    # case general TP
+                    pass
+
+                # AUTO
+                elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp['status'] == 'FILLED' and r_query_sl['status'] == 'NEW':
+                    cancel_batch_order(symbol, [sl_orderId], 'AUTO TP FILLED, REMAIN SL CLEAR')
+                    update_history_status(open_order_history, symbol, et_orderId, 'WIN')  # AUTO TP FILLED
+
+                elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and True and r_query_sl['status'] == 'FILLED':
+                    cancel_batch_order(symbol, [sl_orderId], 'AUTO SL FILLED, REMAIN TP CLEAR')
+                    update_history_status(open_order_history, symbol, et_orderId, 'LOSE')  # AUTO TP FILLED
+
+                elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'EXPIRED' and r_query_sl['status'] == 'EXPIRED':
+                    update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
+
+
+                # FORCE
+                elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp['status']=='NEW' and r_query_sl['status'] == 'NEW':
+                    cancel_batch_order(symbol, [tp_orderId], 'FORCE MARKET CLICK, REMAIN TP CLEAR')
+                    cancel_batch_order(symbol, [sl_orderId], 'FORCE MARKET CLICK, REMAIN SL CLEAR')
+                    update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
+                elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp['status'] == 'EXPIRED' and r_query_sl['status'] == 'NEW':
+                    cancel_batch_order(symbol, [sl_orderId], 'FORCE MARKET CLICK AND TIME PASSED, REMAIN SL CLEAR')
+                    update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
+                elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp['status'] == 'CANCELED' and r_query_sl['status'] == 'NEW':
+                    close_position_by_symbol(symbol, quantity, longshort, et_orderId)
+                    # cancel_batch_order(symbol, [sl_orderId], 'FORCE TP CLICK, REMAIN SL CLEAR')
+                    update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
 
 
 def single(symbols, i, *args):
@@ -1213,11 +1056,6 @@ def single(symbols, i, *args):
                 moniwave_and_action(symbol, tf)
             except Exception as e:
                 print('moniwave_and_action: %s' % str(e))
-
-        # try:
-        #     moniorders_and_action(symbol)
-        # except Exception as e:
-        #     print('moniwave_and_action: %s' % str(e))
 
 
 def set_maxleverage_allsymbol(symbols):
