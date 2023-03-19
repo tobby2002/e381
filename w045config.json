@@ -1,7 +1,7 @@
 {
   "default": {
-    "version": "0.7",
-    "descrition": "045 MONIHISTORY refactoried version added ft fcnt",
+    "version": "0.71",
+    "descrition": "045 MONIHISTORY refactoried version added ft fcnt monitp",
     "_exchange": "bybit_usdt_perp, binance_usdt_perp, binance_busd_perp binance_usdt_busd_perp",
     "exchange": "BINANCE",
     "exchange_symbol": "binance_usdt_busd_perp",
@@ -38,7 +38,7 @@
 
     "_fractal_count": ["5: default, 7, 9 , 11"],
     "_fcnt": [11, 31, 51, 71],
-    "fcnt": [31, 51],
+    "fcnt": [31, 51, 71],
     "loop_count": 1,
     "up_to_count": 3,
     "condi_same_date": true,
@@ -74,7 +74,7 @@
     "printout": false,
     "multi_process": true,
     "seed": 100,
-    "init_running_trade": false,
+    "init_running_trade": true,
     "reset_leverage": false
   },
   "basic": {
