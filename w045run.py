@@ -947,7 +947,7 @@ def delete_history_status(open_order_history, symbol, h_id, event):
 
 def close_position_by_symbol(symbol, quantity, longshort, et_orderId):
     positions = api_call('account', [])['positions']
-    side = "SELL" if longshort else "BUY"
+    side = "LONG" if longshort else "SHORT"
     result_position_filtered = [x for x in positions if x['symbol'] == symbol and x['entryPrice'] != '0.0' and x['positionSide'] == side]
     for p in result_position_filtered:
         # quantity = str(abs(float(p['positionAmt'])))
@@ -956,9 +956,11 @@ def close_position_by_symbol(symbol, quantity, longshort, et_orderId):
                                  "LONG" if longshort else "SHORT", "MARKET",
                                  quantity, "tp_" + str(et_orderId)])
         if order_market:
-            logger.info(symbol + ' _CLOSE POSITION close_position_by_symbol success' + order_market)
+            logger.info(symbol + ' _CLOSE POSITION close_position_by_symbol success' + str(order_market))
         else:
-            logger.info(symbol + ' _CLOSE POSITION close_position_by_symbol fail' + order_market)
+            logger.info(symbol + ' _CLOSE POSITION close_position_by_symbol fail' + str(order_market))
+
+
 
 
 def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL        or       TP -> WIN or LOSE
@@ -976,22 +978,74 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
                 fc = new['fcnt']
 
                 r_get_open_orders_et = api_call('get_open_orders', [symbol, et_orderId])
-                if r_get_open_orders_et:
+                r_get_open_orders_et_flg = True if r_get_open_orders_et else False
+                r_query_et = api_call('query_order', [symbol, et_orderId])
+
+                r_get_open_orders_sl = api_call('get_open_orders', [symbol, sl_orderId])
+                r_get_open_orders_sl_flg = True if r_get_open_orders_sl else False
+                r_query_sl = api_call('query_order', [symbol, sl_orderId])
+
+
+                if r_get_open_orders_et_flg is True and r_get_open_orders_sl_flg is True and r_query_et['status'] =='NEW' and r_query_sl['status'] == 'NEW':
                     if not c_currentprice_in_zone_by_prices(symbol, longshort, float(et_price), float(tp_price)):
                         # CANCEL_ETSL
                         response_cancel = cancel_batch_order(symbol, [str(et_orderId), str(sl_orderId)], 'CANCEL ETSL')
                         if response_cancel:
                             update_history_status(open_order_history, symbol, et_orderId, 'CANCEL')
-                else:
-                    r_query_et = api_call('query_order', [symbol, et_orderId])
-                    r_query_sl = api_call('query_order', [symbol, sl_orderId])
-                    if r_query_et['status'] == 'FILLED' and r_query_sl['status'] == 'NEW':
-                        r_get_open_orders_sl = api_call('get_open_orders', [symbol, sl_orderId])
-                        if r_get_open_orders_sl:
-                            # NEW_TP
-                            new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId)
-                    elif r_query_et['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED':
+                elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is True and r_query_et['status'] == 'FILLED' and r_query_sl['status'] == 'NEW':
+                        # NEW_TP
+                        new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId)
+                elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is True and r_query_et['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED':
                         update_history_status(open_order_history, symbol, et_orderId, 'LOSE')
+                        print(symbol, ' IN ETSLETSL OooooooooooOOOOOo  ESSL DIRECT LOSE ooOOOOOoooOOOO')
+                        logger.info(symbol + ' IN ETSLETSL Ooooooooooo  ESSL DIRECT LOSE  OOOOOoooOOOOOoooOOOO')
+
+                elif r_get_open_orders_et_flg is True and r_get_open_orders_sl_flg is False and r_query_et['status'] =='NEW' and r_query_sl['status'] == 'CANCELED':
+                    cancel_batch_order(symbol, [et_orderId], 'FORCE CLICK SL IN ETSL, REMAIN ET CLEAR')
+                    update_history_status(open_order_history, symbol, et_orderId, 'CANCEL')
+                elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is True and r_query_et['status'] =='CANCELED' and r_query_sl['status'] == 'NEW':
+                    cancel_batch_order(symbol, [sl_orderId], 'FORCE CLICK ET IN ETSL, REMAIN SL CLEAR')
+                    update_history_status(open_order_history, symbol, et_orderId, 'CANCEL')
+
+
+                elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is False and r_query_et['status'] == 'FILLED' and r_query_sl['status'] == 'CANCELED':
+                    rt = close_position_by_symbol(symbol, quantity, longshort, et_orderId)  # AFTER FORCE SL CLICK, REMAIN TP FILLED AND CLOSE POSI ET
+                    if rt is not None:
+                        logger.info(
+                            symbol + ' IN ETSLETSL Ooooooooooo  AFTER FORCE SL CLICK, REMAIN TP FILLED AND CLOSE POSI ET OOOOOoooOOOOOoooOOOO'+ str(rt))
+                        update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
+                    else:
+                        print(symbol,
+                              ' IN ETSLETSL OooooooooooOOOOOo  AFTER FORCE SL CLICK, REMAIN TP FILLED AND CLOSE POSI ET  FAIL ERROR  ooOOOOOoooOOOO' + str(rt))
+                        logger.info(
+                            symbol + ' IN ETSLETSL Ooooooooooo  AFTER FORCE SL CLICK, REMAIN TP FILLED AND CLOSE POSI ET FAIL ERROR OOOOOoooOOOOOoooOOOO'+ str(rt))
+
+                elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is True and r_query_et['status'] == 'NEW' and r_query_sl['status'] == 'CANCELED':
+                    cancel_batch_order(symbol, [sl_orderId], 'FORCE MARKET CLICK IN ETSL, REMAIN SL CLEAR')
+                    update_history_status(open_order_history, symbol, et_orderId, 'CANCEL')
+                elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is False and r_query_et['status'] == 'CANCELED' and r_query_sl['status'] == 'CANCELED':
+                    update_history_status(open_order_history, symbol, et_orderId, 'CANCEL')  # TWO ET AND SL ARE CANCELED
+                    print(symbol, ' IN ETSLETSL OooooooooooOOOOO    TWO ET AND SL ARE CANCELED oooOOOOOoooOOOO')
+                    logger.info(symbol + ' IN ETSLETSL OooooooooooOOO    TWO ET AND SL ARE CANCELED OOoooOOOOOoooOOOO')
+
+
+
+                elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is False and r_query_et['status'] == 'PARTIALLY_FILLED' and r_query_sl['status'] == 'NEW':
+                    rt = close_position_by_symbol(symbol, quantity, longshort, et_orderId)  # AFTER PARTIALLY_FILLED, REMAIN TCLOSE POSI ET
+                    if rt is not None:
+                        update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
+                    else:
+                        print(symbol,
+                              ' IN ETSLETSL OooooooooooOOOOOo  AFTER PARTIALLY_FILLED, REMAIN TCLOSE POSI ET  FAIL ERROR  ooOOOOOoooOOOO' + str(rt))
+                        logger.info(
+                            symbol + ' IN ETSLETSL Ooooooooooo  AFTER PARTIALLY_FILLED, REMAIN TCLOSE POSI ET ERROR OOOOOoooOOOOOoooOOOO'+ str(rt))
+                else:
+                    print(symbol, ' IN ETSLETSL OooooooooooOOOOOoooOOOOOoooOOOO')
+                    logger.info(symbol + ' IN ETSLETSL OooooooooooOOOOOoooOOOOOoooOOOO')
+                    logger.info('IN ETSL: %s %s %s %s %s ' % (symbol, str(r_get_open_orders_et_flg), str(r_get_open_orders_sl_flg), str(r_query_et['status']), str(r_query_sl['status'])))
+
+
+
 
         history_tp = [x for x in open_order_history if (x['symbol'] == symbol and x['status'] == 'TP')]
         if history_tp:
@@ -1011,7 +1065,6 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
                 r_get_open_orders_sl_flg = True if r_get_open_orders_sl else False
                 r_query_sl = api_call('query_order', [symbol, sl_orderId])
 
-                print(symbol, True if r_get_open_orders_tp else False, True if r_get_open_orders_sl else False, r_query_tp['status'], r_query_sl['status'])
 
                 if r_get_open_orders_tp_flg is True and r_get_open_orders_sl_flg is True and r_query_tp['status'] =='NEW' and r_query_sl['status'] == 'NEW':
                     # case general TP
@@ -1022,9 +1075,9 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
                     cancel_batch_order(symbol, [sl_orderId], 'AUTO TP FILLED, REMAIN SL CLEAR')
                     update_history_status(open_order_history, symbol, et_orderId, 'WIN')  # AUTO TP FILLED
 
-                elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and True and r_query_sl['status'] == 'FILLED':
-                    cancel_batch_order(symbol, [sl_orderId], 'AUTO SL FILLED, REMAIN TP CLEAR')
-                    update_history_status(open_order_history, symbol, et_orderId, 'LOSE')  # AUTO TP FILLED
+                elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'EXPIRED' and r_query_sl['status'] == 'FILLED':
+                    cancel_batch_order(symbol, [tp_orderId], 'AUTO SL FILLED, REMAIN TP CLEAR')
+                    update_history_status(open_order_history, symbol, et_orderId, 'LOSE')  # AUTO SL FILLED
 
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'EXPIRED' and r_query_sl['status'] == 'EXPIRED':
                     update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
@@ -1032,6 +1085,9 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
 
                 # FORCE
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp['status']=='NEW' and r_query_sl['status'] == 'NEW':
+                    print('IN TP: r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp[status]==NEW and r_query_sl[status] == NEW', symbol, True if r_get_open_orders_tp else False,
+                          True if r_get_open_orders_sl else False, r_query_tp['status'], r_query_sl['status'])
+                    logger.info('IN ETSL: %s %s %s %s %s ' % (symbol, str(r_get_open_orders_tp_flg), str(r_get_open_orders_sl_flg), str(r_query_tp['status']), str(r_query_sl['status'])))
                     cancel_batch_order(symbol, [tp_orderId], 'FORCE MARKET CLICK, REMAIN TP CLEAR')
                     cancel_batch_order(symbol, [sl_orderId], 'FORCE MARKET CLICK, REMAIN SL CLEAR')
                     update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
@@ -1039,9 +1095,30 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
                     cancel_batch_order(symbol, [sl_orderId], 'FORCE MARKET CLICK AND TIME PASSED, REMAIN SL CLEAR')
                     update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp['status'] == 'CANCELED' and r_query_sl['status'] == 'NEW':
-                    close_position_by_symbol(symbol, quantity, longshort, et_orderId)
-                    # cancel_batch_order(symbol, [sl_orderId], 'FORCE TP CLICK, REMAIN SL CLEAR')
+                    close_position_by_symbol(symbol, quantity, longshort, et_orderId)  # FORCE TP CLICK, REMAIN SL CLEAR
+                    cancel_batch_order(symbol, [sl_orderId], 'FORCE TP CLICK, REMAIN SL CLEAR')
                     update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
+
+                elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'CANCELED' and r_query_sl['status'] == 'CANCELED':
+                    close_position_by_symbol(symbol, quantity, longshort, et_orderId)  # FORCE TP and SL CLICK
+                    update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
+
+                elif r_get_open_orders_tp_flg is True and r_get_open_orders_sl_flg is True and r_query_tp['status'] =='NEW' and r_query_sl['status'] == 'CANCELED':
+                    close_position_by_symbol(symbol, quantity, longshort, et_orderId)  # FORCE SL, BEFORE CHECK TP CHEKER
+                    cancel_batch_order(symbol, [tp_orderId], 'FORCE SL CLICK, REMAIN SL CLEAR')
+                    update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
+                elif r_get_open_orders_tp_flg is True and r_get_open_orders_sl_flg is False and r_query_tp['status'] =='NEW' and r_query_sl['status'] == 'CANCELED':
+                    close_position_by_symbol(symbol, quantity, longshort, et_orderId)  # FORCE SL AFTER CHECK TP CHEKER
+                    cancel_batch_order(symbol, [tp_orderId], 'FORCE SL CLICK, REMAIN SL CLEAR')
+                    update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
+
+                else:
+                    print(symbol, ' IN TPTP OooooooooooOOOOOoooOOOOOoooOOOO')
+                    logger.info(symbol + ' IN TPTP OooooooooooOOOOOoooOOOOOoooOOOO')
+                    print('IN TP: ', symbol, True if r_get_open_orders_tp else False,
+                          True if r_get_open_orders_sl else False, r_query_tp['status'], r_query_sl['status'])
+                    logger.info('IN ETSL: %s %s %s %s %s ' % (symbol, str(r_get_open_orders_tp_flg), str(r_get_open_orders_sl_flg), str(r_query_tp['status']), str(r_query_sl['status'])))
+
 
 
 def single(symbols, i, *args):
