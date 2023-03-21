@@ -872,7 +872,10 @@ def moniwave_and_action(symbol, tf):
                                         available, quantity = c_balance_and_calc_quanty(symbol)
                                         if available:
                                             et_price, sl_price, tp_price = get_trade_prices(symbol, wavepattern)
-                                            r = new_et_order(symbol, tf, fc, longshort, et_price, sl_price, tp_price, quantity, wavepattern)
+                                            try:
+                                                r = new_et_order(symbol, tf, fc, longshort, et_price, sl_price, tp_price, quantity, wavepattern)
+                                            except Exception as e:
+                                                logger.error('new_et_order: %s' % str(e))
                                             if r:
                                                 if plotview:
                                                     plot_pattern_m(df=df,
