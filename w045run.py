@@ -592,7 +592,7 @@ def cancel_batch_order(symbol, order_id_l, desc):
     return False
 
 
-def c_in_no_double_ordering(symbol, tf, fc, w):
+def c_in_no_double_ordering(symbol, longshort, tf, fc, w):
     #####  이중 new limit order 방지 로직 start #####
     history_new = [x for x in open_order_history if
                    (x['symbol'] == symbol and x['status'] == 'ETSL'
@@ -612,8 +612,9 @@ def c_in_no_double_ordering(symbol, tf, fc, w):
                     # 대상외
                     return False
 
-                if float(r_query_limit['price']) == float(et_price) or float(r_query_limit['clientOrderId'].split('_')[4]) == float(tp_price):
-                    # and r_query_limit['newClientOrderId'] == tp_price:  # when limit order, set newClientOrderId": str(tp_price), therefore ..
+                if float(r_query_limit['price']) == float(et_price) \
+                        and float(r_query_limit['clientOrderId'].split('_')[2]) == float(sl_price) \
+                        and float(r_query_limit['clientOrderId'].split('_')[3]) == float(tp_price):
                     return False
     #####  이중 new limit order 방지 로직 start #####
     return True
@@ -751,7 +752,7 @@ def check_cons_for_new_etsl_order(df, symbol, tf, fc, longshort, w, idx):
         return False
     if not c_in_no_risk(symbol, w):
         return False
-    if not c_in_no_double_ordering(symbol, tf, fc, w):
+    if not c_in_no_double_ordering(symbol, longshort, tf, fc, w):
         return False
     return True
 
