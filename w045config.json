@@ -42,7 +42,7 @@
     "loop_count": 1,
     "up_to_count": 3,
     "condi_same_date": true,
-    "et_zone_rate": 0.7,
+    "et_zone_rate": 0.5,
 
     "_fee": "bybit_usdt_perp: -0.00025  0.0006    binance_futures: 0.0002    0.0004             0.01 --> 1%, 0.001 --> 0.1%, 0.0001 -> 0.01%   fee_taker:0.0004 시장가, fee_maker: 0.0002 지정가",
     "fee": 0.0000,
