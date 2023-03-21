@@ -191,7 +191,10 @@ def api_call(method, arglist, **kwargs):
             )
         elif method == 'new_batch_order':
             params = arglist[0]
-            response = um_futures_client.new_batch_order(params)
+            try:
+                response = um_futures_client.new_batch_order(params)
+            except:
+                return None
         elif method == 'query_order':
             symbol = arglist[0]
             orderId = arglist[1]
@@ -489,12 +492,18 @@ def new_et_order(symbol, tf, fc, longshort, et_price, sl_price, tp_price, quanti
             "quantity": str(float(quantity)),
             "timeInForce": "GTC",
             "price": str(et_price),
-            "newClientOrderId": 'et_' + str(tf) + '_' + str(fc) + '_' + str(sl_price) + '_' + str(tp_price),
+            "newClientOrderId": str(tf) + '_' + str(fc) + '_' + str(sl_price) + '_' + str(tp_price),
         }
     ]
-    r = api_call('new_batch_order', [params])
-    if r:
-        order_et = r[0]
+    r1 = api_call('new_batch_order', [params])
+    if r1 is not None:
+        try:
+            order_et = r1[0]
+            if order_et['code']:
+                return False
+        except:
+            pass
+
         params = [
             {
                 "symbol": symbol,
@@ -510,20 +519,33 @@ def new_et_order(symbol, tf, fc, longshort, et_price, sl_price, tp_price, quanti
                 "newClientOrderId": "sl_" + str(tf) + '_' + str(fc) + '_' + str(order_et['orderId']),
             }
         ]
-        r = api_call('new_batch_order', [params])
-        if r:
-            order_sl = r[0]
+        r2 = api_call('new_batch_order', [params])
+        if r2:
+            try:
+                order_sl = r2[0]
+                if order_sl['code']:
+                    print(symbol, tf, fc, longshort, et_price, sl_price, tp_price, quantity, wavepattern)
+                    logger.error('_NEWET ET FAIL 2 ' + str(order_sl))
+                    api_call('cancel_batch_order', [symbol, [order_et['orderId']], []])
+                    return False
+            except:
+                pass
             add_etsl_history(open_order_history, symbol, tf, fc, longshort, wavepattern, et_price,
                             sl_price, tp_price, quantity, order_et['orderId'], order_sl['orderId'], order_et,
                             order_sl)
             return True
         else:
-            r = api_call('cancel_batch_order', [symbol, [order_et['orderId']], []])
-            if r:
-                order_tp = r[0]
-                logger.info(symbol + ' _CANCEL ET: ' + str(order_tp))
+            r3 = api_call('cancel_batch_order', [symbol, [order_et['orderId']], []])
+            if r3:
+                try:
+                    order_cancel_et = r3[0]
+                    if order_cancel_et['code']:
+                        logger.error('_NEWET ET CANCEL FAIL ' + order_cancel_et['code'])
+                        return False
+                except:
+                    return False
     else:
-        logger.info(symbol + ' _FAIL ET' + str((symbol, tf, fc, longshort, et_price, sl_price, tp_price, quantity, wavepattern)))
+        logger.info(symbol + ' _FAIL ET ITSELF FAIL' + str((symbol, tf, fc, longshort, et_price, sl_price, tp_price, quantity, wavepattern)))
     return False
 
 
@@ -873,15 +895,25 @@ def moniwave_and_action(symbol, tf):
                                         if available:
                                             et_price, sl_price, tp_price = get_trade_prices(symbol, wavepattern)
                                             try:
+                                                # plot_pattern_m(df=df,
+                                                #                wave_pattern=[[1, wavepattern.dates[0], id(wavepattern),
+                                                #                               wavepattern]],
+                                                #                df_lows_plot=df_lows_plot, df_highs_plot=df_highs_plot,
+                                                #                trade_info=None, title=str(symbol + ' %s ' % str(
+                                                #         'LONG' if longshort else 'SHORT') + '%sm %s' % (
+                                                #                                           tf, fc) + ', ET: ' + str(
+                                                #         et_price)))
+
                                                 r = new_et_order(symbol, tf, fc, longshort, et_price, sl_price, tp_price, quantity, wavepattern)
+                                                if r:
+                                                    if plotview:
+                                                        plot_pattern_m(df=df,
+                                                                       wave_pattern=[[1, wavepattern.dates[0], id(wavepattern), wavepattern]],
+                                                                       df_lows_plot=df_lows_plot, df_highs_plot=df_highs_plot,
+                                                                       trade_info=None, title=str(symbol + ' %s ' % str('LONG' if longshort else 'SHORT') + '%sm %s' % (tf, fc) +', ET: ' + str(et_price)))
+
                                             except Exception as e:
                                                 logger.error('new_et_order: %s' % str(e))
-                                            if r:
-                                                if plotview:
-                                                    plot_pattern_m(df=df,
-                                                                   wave_pattern=[[1, wavepattern.dates[0], id(wavepattern), wavepattern]],
-                                                                   df_lows_plot=df_lows_plot, df_highs_plot=df_highs_plot,
-                                                                   trade_info=None, title=str(symbol + ' %s ' % str('LONG' if longshort else 'SHORT') + '%sm %s' % (tf, fc) +', ET: ' + str(et_price)))
 
     return
 
