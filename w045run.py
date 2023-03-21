@@ -995,7 +995,7 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
                 elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is True and r_query_et['status'] == 'FILLED' and r_query_sl['status'] == 'NEW':
                         # NEW_TP
                         new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId)
-                elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is True and r_query_et['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED':
+                elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is False and r_query_et['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED':
                         update_history_status(open_order_history, symbol, et_orderId, 'LOSE')
                         print(symbol, ' IN ETSLETSL OooooooooooOOOOOo  ESSL DIRECT LOSE ooOOOOOoooOOOO')
                         logger.info(symbol + ' IN ETSLETSL Ooooooooooo  ESSL DIRECT LOSE  OOOOOoooOOOOOoooOOOO')
@@ -1076,18 +1076,20 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
                     update_history_status(open_order_history, symbol, et_orderId, 'WIN')  # AUTO TP FILLED
 
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'EXPIRED' and r_query_sl['status'] == 'FILLED':
-                    cancel_batch_order(symbol, [tp_orderId], 'AUTO SL FILLED, REMAIN TP CLEAR')
+                    # cancel_batch_order(symbol, [tp_orderId], 'AUTO SL FILLED, REMAIN TP CLEAR')
                     update_history_status(open_order_history, symbol, et_orderId, 'LOSE')  # AUTO SL FILLED
 
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'EXPIRED' and r_query_sl['status'] == 'EXPIRED':
                     update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
 
+                elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED':
+                    update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # AUTO TP FILLED  # TODO check win or lose
 
                 # FORCE
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp['status']=='NEW' and r_query_sl['status'] == 'NEW':
                     print('IN TP: r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp[status]==NEW and r_query_sl[status] == NEW', symbol, True if r_get_open_orders_tp else False,
                           True if r_get_open_orders_sl else False, r_query_tp['status'], r_query_sl['status'])
-                    logger.info('IN ETSL: %s %s %s %s %s ' % (symbol, str(r_get_open_orders_tp_flg), str(r_get_open_orders_sl_flg), str(r_query_tp['status']), str(r_query_sl['status'])))
+                    logger.info('IN TP: %s %s %s %s %s ' % (symbol, str(r_get_open_orders_tp_flg), str(r_get_open_orders_sl_flg), str(r_query_tp['status']), str(r_query_sl['status'])))
                     cancel_batch_order(symbol, [tp_orderId], 'FORCE MARKET CLICK, REMAIN TP CLEAR')
                     cancel_batch_order(symbol, [sl_orderId], 'FORCE MARKET CLICK, REMAIN SL CLEAR')
                     update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
@@ -1117,7 +1119,7 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
                     logger.info(symbol + ' IN TPTP OooooooooooOOOOOoooOOOOOoooOOOO')
                     print('IN TP: ', symbol, True if r_get_open_orders_tp else False,
                           True if r_get_open_orders_sl else False, r_query_tp['status'], r_query_sl['status'])
-                    logger.info('IN ETSL: %s %s %s %s %s ' % (symbol, str(r_get_open_orders_tp_flg), str(r_get_open_orders_sl_flg), str(r_query_tp['status']), str(r_query_sl['status'])))
+                    logger.info('IN TPTP: %s %s %s %s %s ' % (symbol, str(r_get_open_orders_tp_flg), str(r_get_open_orders_sl_flg), str(r_query_tp['status']), str(r_query_sl['status'])))
 
 
 
