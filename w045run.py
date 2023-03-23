@@ -58,6 +58,15 @@ loop_count = config['default']['loop_count']
 timeframe = config['default']['timeframe']
 up_to_count = config['default']['up_to_count']
 condi_same_date = config['default']['condi_same_date']
+condi_compare_before_fractal = config['default']['condi_compare_before_fractal']
+condi_compare_before_fractal_strait = config['default']['condi_compare_before_fractal_strait']
+if condi_compare_before_fractal_strait:
+    condi_compare_before_fractal_shift = 1
+condi_compare_before_fractal_shift = config['default']['condi_compare_before_fractal_shift']
+condi_compare_before_fractal_mode = config['default']['condi_compare_before_fractal_mode']
+if not condi_compare_before_fractal:
+    condi_compare_before_fractal_mode = 0
+
 et_zone_rate = config['default']['et_zone_rate']
 
 c_time_beyond_flg = config['default']['c_time_beyond_flg']
@@ -141,6 +150,11 @@ def print_condition():
     logger.info('period: %s ~ %s' % (start_dt, end_dt))
     logger.info('up_to_count: %s' % up_to_count)
     logger.info('condi_same_date: %s' % condi_same_date)
+    logger.info('condi_compare_before_fractal: %s' % condi_compare_before_fractal)
+    logger.info('condi_compare_before_fractal_mode: %s' % condi_compare_before_fractal_mode)
+    logger.info('condi_compare_before_fractal_strait: %s' % condi_compare_before_fractal_strait)
+    logger.info('condi_compare_before_fractal_shift: %s' % condi_compare_before_fractal_shift)
+
     logger.info('et_zone_rate: %s' % et_zone_rate)
     logger.info('o_fibo: %s' % o_fibo)
     logger.info('h_fibo: %s' % h_fibo)
@@ -860,6 +874,40 @@ def moniwave_and_action(symbol, tf):
         if 'long' in type:
             df_lows = fractals_low_loopA(df_all, fcnt=fc, loop_count=loop_count)
             df_lows_plot = df_lows[['Date', 'Low']]
+
+            df_lows_o = df_lows
+            if condi_compare_before_fractal:
+                if not df_lows.empty:
+                    for i in range(condi_compare_before_fractal_shift, 0, -1):
+                        try:
+                            if condi_compare_before_fractal_strait:
+                                i = condi_compare_before_fractal_shift
+                            df_lows['Low_before'] = df_lows.Low.shift(i).fillna(0)
+                            if condi_compare_before_fractal_mode == 1:
+                                df_lows['compare_flg'] = df_lows.apply(lambda x: 1 if x['Low'] > x['Low_before'] else 0,
+                                                                       axis=1)
+                            elif condi_compare_before_fractal_mode == 2:
+                                df_lows['compare_flg'] = df_lows.apply(
+                                    lambda x: 1 if x['Low'] >= x['Low_before'] else 0, axis=1)
+                            elif condi_compare_before_fractal_mode == 3:
+                                df_lows['compare_flg'] = df_lows.apply(lambda x: 1 if x['Low'] < x['Low_before'] else 0,
+                                                                       axis=1)
+                            elif condi_compare_before_fractal_mode == 4:
+                                df_lows['compare_flg'] = df_lows.apply(
+                                    lambda x: 1 if x['Low'] <= x['Low_before'] else 0, axis=1)
+                            elif condi_compare_before_fractal_mode == 5:
+                                df_lows['compare_flg'] = df_lows.apply(
+                                    lambda x: 1 if x['Low'] == x['Low_before'] else 0, axis=1)
+                            df_lows = df_lows.drop(df_lows[df_lows['compare_flg'] == 0].index)
+
+                            if not df_lows.empty:
+                                del df_lows['Low_before']
+                                del df_lows['compare_flg']
+                                pass
+                        except:
+                            pass
+
+
             impulse = Impulse('impulse')
             lows_idxs = df_lows.index.tolist()
             idxs = lows_idxs
@@ -867,6 +915,32 @@ def moniwave_and_action(symbol, tf):
         if 'short' in type:
             df_highs = fractals_high_loopA(df_all, fcnt=fc, loop_count=loop_count)
             df_highs_plot = df_highs[['Date', 'High']]
+
+            df_highs_o = df_highs
+            if condi_compare_before_fractal:
+                if not df_highs.empty:
+                    for i in range(condi_compare_before_fractal_shift, 0, -1):
+                        try:
+                            df_highs['High_before'] = df_highs.High.shift(i).fillna(100000000)
+                            if condi_compare_before_fractal_mode == 1:
+                                df_highs['compare_flg'] = df_highs.apply(lambda x: 1 if x['High'] < x['High_before'] else 0, axis=1)
+                            elif condi_compare_before_fractal_mode == 2:
+                                df_highs['compare_flg'] = df_highs.apply(lambda x: 1 if x['High'] <= x['High_before'] else 0, axis=1)
+                            elif condi_compare_before_fractal_mode == 3:
+                                df_highs['compare_flg'] = df_highs.apply(lambda x: 1 if x['High'] > x['High_before'] else 0, axis=1)
+                            elif condi_compare_before_fractal_mode == 4:
+                                df_highs['compare_flg'] = df_highs.apply(lambda x: 1 if x['High'] >= x['High_before'] else 0, axis=1)
+                            elif condi_compare_before_fractal_mode == 5:
+                                df_highs['compare_flg'] = df_highs.apply(lambda x: 1 if x['High'] == x['High_before'] else 0, axis=1)
+                            df_highs = df_highs.drop(df_highs[df_highs['compare_flg'] == 0].index)
+
+                            if not df_highs.empty:
+                                del df_lows['High_before']
+                                del df_lows['compare_flg']
+                                pass
+                        except:
+                            pass
+
             downimpulse = DownImpulse('downimpulse')
             highs_idxs = df_highs.index.tolist()
             idxs = highs_idxs
@@ -1049,7 +1123,7 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
                     if rt is not None:
                         logger.info(
                             symbol + ' IN ETSLETSL Ooooooooooo  AFTER FORCE SL CLICK, REMAIN TP FILLED AND CLOSE POSI ET OOOOOoooOOOOOoooOOOO'+ str(rt))
-                        update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
+                        update_history_status(open_order_history, symbol, et_orderId, 'TP')  # TODO check win or lose
                     else:
                         print(symbol,
                               ' IN ETSLETSL OooooooooooOOOOOo  AFTER FORCE SL CLICK, REMAIN TP FILLED AND CLOSE POSI ET  FAIL ERROR  ooOOOOOoooOOOO' + str(rt))
@@ -1066,18 +1140,26 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
 
 
 
-                elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is False and r_query_et['status'] == 'PARTIALLY_FILLED' and r_query_sl['status'] == 'NEW':
-                    rt = close_position_by_symbol(symbol, quantity, longshort, et_orderId)  # AFTER PARTIALLY_FILLED, REMAIN TCLOSE POSI ET
-                    if rt is not None:
-                        update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
-                    else:
-                        print(symbol,
-                              ' IN ETSLETSL OooooooooooOOOOOo  AFTER PARTIALLY_FILLED, REMAIN TCLOSE POSI ET  FAIL ERROR  ooOOOOOoooOOOO' + str(rt))
-                        logger.info(
-                            symbol + ' IN ETSLETSL Ooooooooooo  AFTER PARTIALLY_FILLED, REMAIN TCLOSE POSI ET ERROR OOOOOoooOOOOOoooOOOO'+ str(rt))
+                # elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is False and r_query_et['status'] == 'PARTIALLY_FILLED' and r_query_sl['status'] == 'NEW':
+                #     rt = close_position_by_symbol(symbol, quantity, longshort, et_orderId)  # AFTER PARTIALLY_FILLED, REMAIN TCLOSE POSI ET
+                #     if rt is not None:
+                #         update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
+                #     else:
+                #         print(symbol,
+                #               ' IN ETSLETSL OooooooooooOOOOOo  AFTER PARTIALLY_FILLED, REMAIN TCLOSE POSI ET  FAIL ERROR  ooOOOOOoooOOOO' + str(rt))
+                #         logger.info(
+                #             symbol + ' IN ETSLETSL Ooooooooooo  AFTER PARTIALLY_FILLED, REMAIN TCLOSE POSI ET ERROR OOOOOoooOOOOOoooOOOO'+ str(rt))
+
+                elif r_get_open_orders_et_flg is True and r_get_open_orders_sl_flg is True and r_query_et['status'] == 'PARTIALLY_FILLED' and r_query_sl['status'] == 'NEW':
+                    rt = new_tp_order(symbol, tf, fc, longshort, tp_price, r_query_et['executedQty'], et_orderId)
+                    logger.info(symbol + ' _TP_ORDER PARTIALLY_FILLED monitoring_orders_positions ' + str(rt))
+                    # # # force cancel limit(o), sl(x)
+                    cancel_batch_order(symbol, [int(et_orderId)], 'CANCEL ETSL PARTIALLY ')
+
                 else:
                     print(symbol, ' IN ETSLETSL OooooooooooOOOOOoooOOOOOoooOOOO')
                     logger.info(symbol + ' IN ETSLETSL OooooooooooOOOOOoooOOOOOoooOOOO')
+                    print('IN ETSL: ', symbol, str(r_get_open_orders_et_flg), str(r_get_open_orders_sl_flg), r_query_et['status'], r_query_sl['status'])
                     logger.info('IN ETSL: %s %s %s %s %s ' % (symbol, str(r_get_open_orders_et_flg), str(r_get_open_orders_sl_flg), str(r_query_et['status']), str(r_query_sl['status'])))
 
 
