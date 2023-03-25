@@ -1,7 +1,7 @@
 {
   "default": {
-    "version": "0.8",
-    "descrition": "045 MONIHISTORY refactoried version added ft fcnt monitp fractal shift",
+    "version": "0.85",
+    "descrition": "045 MONIHISTORY refactoried version added ft fcnt monitp fractal shift plrate < 0.5",
     "_exchange": "bybit_usdt_perp, binance_usdt_perp, binance_busd_perp binance_usdt_busd_perp",
     "exchange": "BINANCE",
     "exchange_symbol": "binance_usdt_busd_perp",
@@ -9,7 +9,6 @@
     "_trade_type": "[long, short] or [long] or [short]",
     "type": ["long", "short"],
     "maxleverage": 100,
-    "qtyrate": 0.33,
     "walletrate": 0.3,
 
     "_c_risk_beyond_desc": ["0.10: 10%,   0.0010: 0.1%"],
@@ -27,7 +26,6 @@
     "period_days_ago_till": 0,
     "period_interval": 0,
     "window": 720,
-    "symbol_duplicated": false,
 
     "symbol_random": true,
     "symbol_last":false,
@@ -42,10 +40,21 @@
     "loop_count": 1,
     "up_to_count": 3,
     "condi_same_date": true,
-    "condi_compare_before_fractal": true,
+
+    "condi_compare_before_fractal": false,
     "condi_compare_before_fractal_strait": true,
     "condi_compare_before_fractal_shift": 1,
     "condi_compare_before_fractal_mode": 1,
+
+    "condi_kelly_adaptive": true,
+    "condi_kelly_window": 20,
+    "qtyrate": 0.5,
+    "krate_max": 0.75,
+    "krate_min": 0.33,
+
+    "condi_plrate_adaptive": true,
+    "condi_plrate_rate": 0.50,
+    "condi_plrate_rate_min": 0.0,
 
     "et_zone_rate": 0.5,
 
