@@ -1,7 +1,7 @@
 {
   "default": {
-    "version": "0.85",
-    "descrition": "045 MONIHISTORY refactoried version added ft fcnt monitp fractal shift plrate < 0.5",
+    "version": "0.9",
+    "descrition": "045 MONIHISTORY refactoried version added ft fcnt monitp fractal shift plrate < 0.5 trade_info",
     "_exchange": "bybit_usdt_perp, binance_usdt_perp, binance_busd_perp binance_usdt_busd_perp",
     "exchange": "BINANCE",
     "exchange_symbol": "binance_usdt_busd_perp",
@@ -41,16 +41,16 @@
     "up_to_count": 3,
     "condi_same_date": true,
 
-    "condi_compare_before_fractal": false,
+    "condi_compare_before_fractal": true,
     "condi_compare_before_fractal_strait": true,
     "condi_compare_before_fractal_shift": 1,
     "condi_compare_before_fractal_mode": 1,
 
     "condi_kelly_adaptive": true,
     "condi_kelly_window": 20,
-    "qtyrate": 0.5,
-    "krate_max": 0.75,
-    "krate_min": 0.33,
+    "qtyrate": 0.40,
+    "krate_max": 0.70,
+    "krate_min": 0.20,
 
     "condi_plrate_adaptive": true,
     "condi_plrate_rate": 0.50,
