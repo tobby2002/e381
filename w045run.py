@@ -45,6 +45,10 @@ low_target_w2 = config['default']['low_target_w2']
 
 seed = config['default']['seed']
 fee = config['default']['fee']
+fee_limit = config['default']['fee_limit']
+fee_sl = config['default']['fee_sl']
+fee_tp = config['default']['fee_tp']
+tp_type = config['default']['tp_type']
 fee_slippage = config['default']['fee_slippage']
 
 period_days_ago = config['default']['period_days_ago']
@@ -67,6 +71,7 @@ if condi_compare_before_fractal_strait:
 condi_compare_before_fractal_shift = config['default']['condi_compare_before_fractal_shift']
 condi_compare_before_fractal_mode = config['default']['condi_compare_before_fractal_mode']
 if not condi_compare_before_fractal:
+    condi_compare_before_fractal_shift = 0
     condi_compare_before_fractal_mode = 0
 
 condi_plrate_adaptive = config['default']['condi_plrate_adaptive']
@@ -117,6 +122,15 @@ logger.addHandler(stream_handler)
 file_handler = logging.FileHandler('logger_%s.log' % seq)
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
+
+stats_history = []
+order_history = []
+asset_history = []
+trade_count = []
+fee_history = []
+pnl_history = []
+wavepattern_history = []
+trade_info = [stats_history, order_history, asset_history, trade_count, fee_history, pnl_history, wavepattern_history]
 
 
 def print_condition():
@@ -179,6 +193,12 @@ def print_condition():
     logger.info('entry_fibo: %s' % entry_fibo)
     logger.info('target_fibo: %s' % target_fibo)
     logger.info('sl_fibo: %s' % sl_fibo)
+
+    logger.info('fee:%s%%' % str(fee*100))
+    logger.info('fee_limit:%s%%' % str(fee_limit*100))
+    logger.info('fee_sl:%s%%' % str(fee_sl*100))
+    logger.info('fee_tp:%s%%' % str(fee_tp*100))
+    logger.info('tp_type:%s' % str(tp_type))
 
     logger.info('intersect_idx: %s' % intersect_idx)
     logger.info('plotview: %s' % plotview)
@@ -756,16 +776,18 @@ def c_active_in_zone(df, symbol, longshort, w):
     return True
 
 
-def c_in_no_risk(symbol, w):
+def c_in_no_risk(symbol, w, trade_info, qtyrate):
+
+    qtyrate_k = get_qtyrate_k(trade_info, qtyrate)
     et_price, sl_price, tp_price = get_trade_prices(symbol, w)
 
     if c_risk_beyond_flg:
-        pnl_percent_sl = (abs(et_price - sl_price) / et_price) * qtyrate
+        pnl_percent_sl = (abs(et_price - sl_price) / et_price) * qtyrate_k
         if pnl_percent_sl >= c_risk_beyond_max:  # decrease max sl rate   0.1 = 10%
             # logger.info(symbol + ' _c_risk_beyond_max : ' + str(pnl_percent_sl))
             return False
 
-        pnl_percent_tp = (abs(tp_price - et_price) / et_price) * qtyrate
+        pnl_percent_tp = (abs(tp_price - et_price) / et_price) * qtyrate_k
         if pnl_percent_tp <= c_risk_beyond_min:  # reduce low tp rate  0.005 = 0.5%
             # logger.info(symbol + ' _c_risk_beyond_min : ' + str(pnl_percent_tp))
             return False
@@ -776,7 +798,7 @@ def c_in_no_risk(symbol, w):
     return True
 
 
-def check_cons_for_new_etsl_order(df, symbol, tf, fc, longshort, w, idx):
+def check_cons_for_new_etsl_order(df, symbol, tf, fc, longshort, w, idx, trade_info, qtyrate):
 
     if not c_plrate_adaptive(symbol, w):
         return False
@@ -792,7 +814,7 @@ def check_cons_for_new_etsl_order(df, symbol, tf, fc, longshort, w, idx):
         return False
     if not c_currentprice_in_zone(symbol, longshort, w):
         return False
-    if not c_in_no_risk(symbol, w):
+    if not c_in_no_risk(symbol, w, trade_info, qtyrate):
         return False
     if not c_in_no_double_ordering(symbol, longshort, tf, fc, w):
         return False
@@ -996,7 +1018,7 @@ def moniwave_and_action(symbol, tf):
                         for rule in rules_to_check:
                             if wavepattern.check_rule(rule):
                                 if c_check_valid_wave_in_history(open_order_history, symbol, tf, fc, wavepattern):
-                                    if check_cons_for_new_etsl_order(df_all, symbol, tf, fc, longshort, wavepattern, i):
+                                    if check_cons_for_new_etsl_order(df_all, symbol, tf, fc, longshort, wavepattern, i, trade_info, qtyrate):
                                         available, quantity = c_balance_and_calc_quanty(symbol)
                                         if available:
                                             et_price, sl_price, tp_price = get_trade_prices(symbol, wavepattern)
@@ -1102,7 +1124,161 @@ def close_position_by_symbol(symbol, quantity, longshort, et_orderId):
             logger.info(symbol + ' _CLOSE POSITION close_position_by_symbol fail' + str(order_market))
 
 
+def get_qtyrate_k(trade_info, qtyrate):
+    t = trade_info
+    stats_history = t[0]
+    qtyrate_k = qtyrate
+    if condi_kelly_adaptive:
+        if stats_history:
+            f_trade_stats = stats_history[-1][9]  # trade_stats index 9, f value kelly_index
+            if f_trade_stats <= 0:
+                qtyrate_k = krate_min
+            elif f_trade_stats <= qtyrate:
+                qtyrate_k = qtyrate
+            elif f_trade_stats > qtyrate and f_trade_stats< krate_max:
+                qtyrate_k = f_trade_stats
+            elif f_trade_stats >= krate_max:
+                qtyrate_k = krate_max
+    return qtyrate_k
 
+
+def update_trade_info(trade_info, c_profit, c_stoploss, open_order_history, symbol, h_id):
+    h = None
+    if open_order_history:
+        history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
+        open_order_history[history_idx] = history_id  # replace history
+        h = open_order_history[history_idx]
+
+    t = trade_info
+    stats_history = t[0]
+    order_history = t[1]
+    asset_history = t[2]
+    trade_count = t[3]
+    fee_history = t[4]
+    pnl_history = t[5]
+    wavepattern_history = t[6]
+    position = True
+
+    qtyrate_k = get_qtyrate_k(trade_info, qtyrate)
+
+    dates = str(h['update_datetime'])[:19]  #'2023-01-15 21:24:00' #TODO how to find real entry date
+    tf = h['tf']
+    longshort = h['longshort']
+
+    entry_price = h['et_price']
+    sl_price = h['sl_price']
+    tp_price = h['tp_price']
+    wavepattern = h['wavepattern']
+
+    b_symbol = abs(tp_price - entry_price) / abs(sl_price - entry_price)  # one trade profitlose rate
+
+    position_enter_i = []
+    if position is True:
+
+        if c_profit or c_stoploss:
+            fee_limit_tp = 0
+            if tp_type == 'maker':
+                fee_limit_tp = (fee_limit + fee_tp) * qtyrate_k
+            elif tp_type == 'taker':
+                fee_limit_tp = (fee_limit + fee_tp + fee_slippage) * qtyrate_k
+            fee_limit_sl = (fee_limit + fee_sl + fee_slippage) * qtyrate_k
+
+            fee_percent = 0
+            pnl_percent = 0
+            win_lose_flg = 0
+            trade_inout_i = []
+            if c_stoploss:
+                win_lose_flg = 0
+                position_sl_i = [dates[i], sl_price]
+                pnl_percent = -(abs(entry_price - sl_price) / entry_price) * qtyrate_k
+                fee_percent = fee_limit_sl
+                trade_count.append(0)
+                trade_inout_i = [position_enter_i, position_sl_i, longshort, '-']
+                out_price = sl_price
+                order_history.append(trade_inout_i)
+
+            if c_profit:
+                win_lose_flg = 1
+                position_pf_i = [dates[i], tp_price]
+                pnl_percent = (abs(tp_price - entry_price) / entry_price) * qtyrate_k
+                fee_percent = fee_limit_tp
+                trade_count.append(1)
+                trade_inout_i = [position_enter_i, position_pf_i, longshort, '+']
+                out_price = tp_price
+                order_history.append(trade_inout_i)
+
+            asset_history_pre = asset_history[-1] if asset_history else seed
+            asset_new = asset_history_pre * (1 + pnl_percent - fee_percent)
+            pnl_history.append(asset_history_pre * pnl_percent)
+            fee_history.append(asset_history_pre * fee_percent)
+            asset_history.append(asset_new)
+            wavepattern_history.append(wavepattern)
+
+            winrate = (sum(trade_count) / len(trade_count)) * 100
+
+            asset_min = seed
+            asset_max = seed
+
+            if len(stats_history) > 0:
+                asset_last_min = stats_history[-1][-2]
+                asset_min = asset_new if asset_new < asset_last_min else asset_last_min
+                asset_last_max = stats_history[-1][-1]
+                asset_max = asset_new if asset_new > asset_last_max else asset_last_max
+
+            df_s = pd.DataFrame.from_records(stats_history)
+            b_cum = (df_s[8].sum() + b_symbol) / (len(df_s) + 1) if len(
+                stats_history) > 0 else b_symbol  # mean - profitlose rate, df_s[6] b_cum index
+            p_cum = winrate / 100  # win rate
+            q_cum = 1 - p_cum  # lose rate
+            tpi_cum = round(p_cum * (1 + b_cum), 2)  # trading perfomance index
+            f_cum = round(p_cum - (q_cum / b_cum), 2)  # kelly index https://igotit.tistory.com/1526
+
+            f = f_cum
+            tpi = tpi_cum
+            b = b_cum
+
+            if condi_kelly_adaptive:
+                if len(df_s) >= condi_kelly_window:
+                    df_s_window = df_s.iloc[-condi_kelly_window:]
+                    p = df_s_window[4].sum() / len(df_s_window)
+                    b = (df_s_window[11].sum() + b_symbol) / (
+                                len(df_s_window) + 1)  # mean in kelly window - profitlose rate
+                    q = 1 - p  # lose rate
+                    tpi = round(p * (1 + b), 2)  # trading perfomance index
+                    f = round(p - (q / b), 2)  # kelly index
+
+            trade_stats = [len(trade_count), round(winrate, 2), asset_new, symbol, win_lose_flg,
+                           'WIN' if win_lose_flg else 'LOSE', f_cum, tpi_cum, b_cum, f, tpi, b, b_symbol,
+                           str(qtyrate_k), str(round(pnl_percent, 4)), sum(pnl_history), sum(fee_history),
+                           round(asset_min, 2), round(asset_max, 2)]
+            stats_history.append(trade_stats)
+            trade_info = [stats_history, order_history, asset_history, trade_count, fee_history, pnl_history,
+                          wavepattern_history]
+
+            # wavepattern_tpsl_l.append([idx, wavepattern.dates[0], id(wavepattern), wavepattern])
+
+            if True:
+                s_11 = symbol + '           '
+                ll = '%s %s %s %s %s x%s %s-%s %s %s %s %s %s %s - %s' % (str(qtyrate_k), str(
+                    condi_compare_before_fractal_mode) + ' :shift=' + str(condi_compare_before_fractal_shift),
+                                                                                 timeframe, s_11[:11], tf, qtyrate_k,
+                                                                                 period_days_ago, period_days_ago_till,
+                                                                                 fcnt, 'L' if longshort else 'S',
+                                                                                 trade_inout_i[0][0][2:-3], '-',
+                                                                                 trade_inout_i[1][0][8:-3],
+                                                                                 str(trade_stats), str(
+                    [entry_price, sl_price, tp_price, out_price]))
+                print(ll)
+                logger.info(ll)
+
+            # if longshort is not None and len(trade_info[1]) > 0:
+            #     if plotview:
+            #         plot_pattern_m(df=df, wave_pattern=[[i, wavepattern.dates[0], id(wavepattern), wavepattern]],
+            #                        df_lows_plot=df_lows_plot, df_highs_plot=df_highs_plot, trade_info=trade_info,
+            #                        title=str(
+            #                            symbol + ' %s ' % str(longshort) + str(trade_stats)))
+
+    return trade_info
 
 def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL        or       TP -> WIN or LOSE
     if open_order_history:
@@ -1193,8 +1369,8 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
                     logger.info(symbol + ' IN ETSLETSL ET:FILLED and SL:EXPIRED monitoring_orders_positions ' + str(rt))
 
                 else:
-                    print(symbol, ' IN ETSLETSL OooooooooooOOOOOoooOOOOOoooOOOO')
-                    logger.info(symbol + ' IN ETSLETSL OooooooooooOOOOOoooOOOOOoooOOOO')
+                    print(symbol, ' IN ETSLETSL OooooooooooOOOOOoooOOOOOooESSLESSLoOOOO')
+                    logger.info(symbol + ' IN ETSLETSL OooooooooooOOOOOoooOOOOOooESSLESSLoOOOO')
                     print('IN ETSL: ', symbol, str(r_get_open_orders_et_flg), str(r_get_open_orders_sl_flg), r_query_et['status'], r_query_sl['status'])
                     logger.info('IN ETSL: %s %s %s %s %s ' % (symbol, str(r_get_open_orders_et_flg), str(r_get_open_orders_sl_flg), str(r_query_et['status']), str(r_query_sl['status'])))
 
@@ -1227,20 +1403,25 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp['status'] == 'FILLED' and r_query_sl['status'] == 'NEW':
                     cancel_batch_order(symbol, [sl_orderId], 'AUTO TP FILLED, REMAIN SL CLEAR')
                     update_history_status(open_order_history, symbol, et_orderId, 'WIN')  # AUTO TP FILLED
+                    trade_info = update_trade_info(trade_info, True, False, open_order_history, symbol, int(et_orderId))
 
                 elif r_query_tp['status'] == 'FILLED' and r_query_sl['status'] == 'EXPIRED':
                     update_history_status(open_order_history, symbol, et_orderId, 'WIN')  # AUTO TP FILLED
+                    trade_info = update_trade_info(trade_info, True, False, open_order_history, symbol, int(et_orderId))
 
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'EXPIRED' and r_query_sl['status'] == 'FILLED':
                     # cancel_batch_order(symbol, [tp_orderId], 'AUTO SL FILLED, REMAIN TP CLEAR')
                     update_history_status(open_order_history, symbol, et_orderId, 'LOSE')  # AUTO SL FILLED
+                    trade_info = update_trade_info(trade_info, False, True, open_order_history, symbol, int(et_orderId))
 
 
                 # FORCE
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'EXPIRED' and r_query_sl['status'] == 'EXPIRED':
+                    logger.info('IN TPTP EXPIRED EXPIRED: %s %s %s %s %s ' % (symbol, str(r_get_open_orders_tp_flg), str(r_get_open_orders_sl_flg), str(r_query_tp['status']), str(r_query_sl['status'])))
                     update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
 
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED':
+                    logger.info('IN TPTP FILLED FILLED: %s %s %s %s %s ' % (symbol, str(r_get_open_orders_tp_flg), str(r_get_open_orders_sl_flg), str(r_query_tp['status']), str(r_query_sl['status'])))
                     update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # AUTO TP FILLED  # TODO check win or lose
 
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp['status']=='NEW' and r_query_sl['status'] == 'NEW':
@@ -1260,6 +1441,7 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
 
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'CANCELED' and r_query_sl['status'] == 'CANCELED':
                     close_position_by_symbol(symbol, quantity, longshort, et_orderId)  # FORCE TP and SL CLICK
+                    logger.info('IN TPTP CANCELED CANCELED : %s %s %s %s %s ' % (symbol, str(r_get_open_orders_tp_flg), str(r_get_open_orders_sl_flg), str(r_query_tp['status']), str(r_query_sl['status'])))
                     update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
 
                 elif r_get_open_orders_tp_flg is True and r_get_open_orders_sl_flg is True and r_query_tp['status'] =='NEW' and r_query_sl['status'] == 'CANCELED':
@@ -1272,8 +1454,8 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
                     update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
 
                 else:
-                    print(symbol, ' IN TPTP OooooooooooOOOOOoooOOOOOoooOOOO')
-                    logger.info(symbol + ' IN TPTP OooooooooooOOOOOoooOOOOOoooOOOO')
+                    print(symbol, ' IN TPTP OooooooooooOOOOOoooOOOOOTTTTTPPPPPPoooOOOO')
+                    logger.info(symbol + ' IN TPTP OooooooooooOOOOOoooOOOOOTTTTTPPPPPPoooOOOO')
                     print('IN TP: ', symbol, True if r_get_open_orders_tp else False,
                           True if r_get_open_orders_sl else False, r_query_tp['status'], r_query_sl['status'])
                     logger.info('IN TPTP: %s %s %s %s %s ' % (symbol, str(r_get_open_orders_tp_flg), str(r_get_open_orders_sl_flg), str(r_query_tp['status']), str(r_query_sl['status'])))
