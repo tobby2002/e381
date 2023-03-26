@@ -123,15 +123,6 @@ file_handler = logging.FileHandler('logger_%s.log' % seq)
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
-stats_history = []
-order_history = []
-asset_history = []
-trade_count = []
-fee_history = []
-pnl_history = []
-wavepattern_history = []
-trade_info = [stats_history, order_history, asset_history, trade_count, fee_history, pnl_history, wavepattern_history]
-
 
 def print_condition():
     logger.info('-------------------------------')
@@ -894,7 +885,7 @@ def c_check_valid_wave_in_history(open_order_history, symbol, tf, fc, wavepatter
 #     return True
 
 
-def moniwave_and_action(symbol, tf):
+def moniwave_and_action(symbol, tf, trade_info):
     timeunit = 'm'
     bin_size = str(tf) + timeunit
     delta = (4 * fcnt[-1] + 1)
@@ -1247,6 +1238,8 @@ def update_trade_info(trade_info, c_profit, c_stoploss, open_order_history, symb
                     tpi = round(p * (1 + b), 2)  # trading perfomance index
                     f = round(p - (q / b), 2)  # kelly index
 
+            # current_price = float(api_call('ticker_price', ['BNBUSDT'])['price'])
+
             trade_stats = [len(trade_count), round(winrate, 2), asset_new, symbol, win_lose_flg,
                            'WIN' if win_lose_flg else 'LOSE', f_cum, tpi_cum, b_cum, f, tpi, b, b_symbol,
                            str(qtyrate_k), str(round(pnl_percent, 4)), sum(pnl_history), sum(fee_history),
@@ -1280,7 +1273,7 @@ def update_trade_info(trade_info, c_profit, c_stoploss, open_order_history, symb
 
     return trade_info
 
-def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL        or       TP -> WIN or LOSE
+def monihistory_and_action(open_order_history, symbol, trade_info):  # ETSL -> CANCEL        or       TP -> WIN or LOSE
     if open_order_history:
         history_new = [x for x in open_order_history if (x['symbol'] == symbol and x['status'] == 'ETSL')]
         if history_new:
@@ -1462,16 +1455,16 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
 
 
 
-def single(symbols, i, *args):
+def single(symbols, i, trade_info, *args):
     for symbol in symbols:
         try:
-            monihistory_and_action(open_order_history, symbol)
+            monihistory_and_action(open_order_history, symbol, trade_info)
         except Exception as e:
             print('monihistory_and_action: %s' % str(e))
 
         for tf in timeframe:
             try:
-                moniwave_and_action(symbol, tf)
+                moniwave_and_action(symbol, tf, trade_info)
             except Exception as e:
                 print('moniwave_and_action: %s' % str(e))
 
@@ -1570,10 +1563,21 @@ if __name__ == '__main__':
     i = 1
     logger.info('PID:' + str(os.getpid()))
     logger.info('seq:' + seq)
+
+    stats_history = []
+    order_history = []
+    asset_history = []
+    trade_count = []
+    fee_history = []
+    pnl_history = []
+    wavepattern_history = []
+    trade_info = [stats_history, order_history, asset_history, trade_count, fee_history, pnl_history,
+                  wavepattern_history]
+
     while True:
         # if i % 10 == 1:
         logger.info(f'{i} start: {time.strftime("%H:%M:%S")}')
-        single(symbols, i)
+        single(symbols, i, trade_info)
         i += 1
     print(f'Finished in {round(time.perf_counter() - start, 2)} second(s)')
     print_condition()
