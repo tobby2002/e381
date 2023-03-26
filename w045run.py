@@ -34,6 +34,8 @@ futures = config['default']['futures']
 type = config['default']['type']
 maxleverage = config['default']['maxleverage']
 qtyrate = config['default']['qtyrate']
+krate_max = config['default']['krate_max']
+krate_min = config['default']['krate_min']
 walletrate = config['default']['walletrate']
 
 
@@ -66,6 +68,12 @@ condi_compare_before_fractal_shift = config['default']['condi_compare_before_fra
 condi_compare_before_fractal_mode = config['default']['condi_compare_before_fractal_mode']
 if not condi_compare_before_fractal:
     condi_compare_before_fractal_mode = 0
+
+condi_plrate_adaptive = config['default']['condi_plrate_adaptive']
+condi_plrate_rate = config['default']['condi_plrate_rate']
+condi_plrate_rate_min = config['default']['condi_plrate_rate_min']
+condi_kelly_adaptive = config['default']['condi_kelly_adaptive']
+condi_kelly_window = config['default']['condi_kelly_window']
 
 et_zone_rate = config['default']['et_zone_rate']
 
@@ -121,6 +129,8 @@ def print_condition():
     logger.info('type:%s' % str(type))
     logger.info('maxleverage:%s' % str(maxleverage))
     logger.info('qtyrate:%s' % str(qtyrate))
+    logger.info('krate_max:%s' % str(krate_max))
+    logger.info('krate_min:%s' % str(krate_min))
     logger.info('walletrate:%s' % str(walletrate))
     logger.info('seed:%s' % str(seed))
     logger.info('fee:%s%%' % str(fee*100))
@@ -154,6 +164,12 @@ def print_condition():
     logger.info('condi_compare_before_fractal_mode: %s' % condi_compare_before_fractal_mode)
     logger.info('condi_compare_before_fractal_strait: %s' % condi_compare_before_fractal_strait)
     logger.info('condi_compare_before_fractal_shift: %s' % condi_compare_before_fractal_shift)
+
+    logger.info('condi_plrate_adaptive: %s' % condi_plrate_adaptive)
+    logger.info('condi_plrate_rate: %s' % condi_plrate_rate)
+    logger.info('condi_plrate_rate_min: %s' % condi_plrate_rate_min)
+    logger.info('condi_kelly_adaptive: %s' % condi_kelly_adaptive)
+    logger.info('condi_kelly_window: %s' % condi_kelly_window)
 
     logger.info('et_zone_rate: %s' % et_zone_rate)
     logger.info('o_fibo: %s' % o_fibo)
@@ -606,6 +622,14 @@ def cancel_batch_order(symbol, order_id_l, desc):
     return False
 
 
+def c_plrate_adaptive(symbol, w):
+    et_price, sl_price, tp_price = get_trade_prices(symbol, w)
+    b_symbol = abs(tp_price - et_price) / abs(sl_price - et_price)  # one trade profitlose rate
+    if condi_plrate_adaptive:
+        if b_symbol > condi_plrate_rate or condi_plrate_rate_min > b_symbol:
+            return False
+    return True
+
 def c_in_no_double_ordering(symbol, longshort, tf, fc, w):
     #####  이중 new limit order 방지 로직 start #####
     history_new = [x for x in open_order_history if
@@ -734,6 +758,7 @@ def c_active_in_zone(df, symbol, longshort, w):
 
 def c_in_no_risk(symbol, w):
     et_price, sl_price, tp_price = get_trade_prices(symbol, w)
+
     if c_risk_beyond_flg:
         pnl_percent_sl = (abs(et_price - sl_price) / et_price) * qtyrate
         if pnl_percent_sl >= c_risk_beyond_max:  # decrease max sl rate   0.1 = 10%
@@ -752,6 +777,9 @@ def c_in_no_risk(symbol, w):
 
 
 def check_cons_for_new_etsl_order(df, symbol, tf, fc, longshort, w, idx):
+
+    if not c_plrate_adaptive(symbol, w):
+        return False
     if not c_real_condition_by_fractal_index(df, fc, w, idx):
         return False
     if not c_active_no_empty(df, w):
@@ -875,7 +903,6 @@ def moniwave_and_action(symbol, tf):
             df_lows = fractals_low_loopA(df_all, fcnt=fc, loop_count=loop_count)
             df_lows_plot = df_lows[['Date', 'Low']]
 
-            df_lows_o = df_lows
             if condi_compare_before_fractal:
                 if not df_lows.empty:
                     for i in range(condi_compare_before_fractal_shift, 0, -1):
@@ -916,22 +943,26 @@ def moniwave_and_action(symbol, tf):
             df_highs = fractals_high_loopA(df_all, fcnt=fc, loop_count=loop_count)
             df_highs_plot = df_highs[['Date', 'High']]
 
-            df_highs_o = df_highs
             if condi_compare_before_fractal:
                 if not df_highs.empty:
                     for i in range(condi_compare_before_fractal_shift, 0, -1):
                         try:
-                            df_highs['High_before'] = df_highs.High.shift(i).fillna(100000000)
+                            df_highs['High_before'] = df_highs.High.shift(i).fillna(10000000000)
                             if condi_compare_before_fractal_mode == 1:
-                                df_highs['compare_flg'] = df_highs.apply(lambda x: 1 if x['High'] < x['High_before'] else 0, axis=1)
+                                df_highs['compare_flg'] = df_highs.apply(
+                                    lambda x: 1 if x['High'] < x['High_before'] else 0, axis=1)
                             elif condi_compare_before_fractal_mode == 2:
-                                df_highs['compare_flg'] = df_highs.apply(lambda x: 1 if x['High'] <= x['High_before'] else 0, axis=1)
+                                df_highs['compare_flg'] = df_highs.apply(
+                                    lambda x: 1 if x['High'] <= x['High_before'] else 0, axis=1)
                             elif condi_compare_before_fractal_mode == 3:
-                                df_highs['compare_flg'] = df_highs.apply(lambda x: 1 if x['High'] > x['High_before'] else 0, axis=1)
+                                df_highs['compare_flg'] = df_highs.apply(
+                                    lambda x: 1 if x['High'] > x['High_before'] else 0, axis=1)
                             elif condi_compare_before_fractal_mode == 4:
-                                df_highs['compare_flg'] = df_highs.apply(lambda x: 1 if x['High'] >= x['High_before'] else 0, axis=1)
+                                df_highs['compare_flg'] = df_highs.apply(
+                                    lambda x: 1 if x['High'] >= x['High_before'] else 0, axis=1)
                             elif condi_compare_before_fractal_mode == 5:
-                                df_highs['compare_flg'] = df_highs.apply(lambda x: 1 if x['High'] == x['High_before'] else 0, axis=1)
+                                df_highs['compare_flg'] = df_highs.apply(
+                                    lambda x: 1 if x['High'] == x['High_before'] else 0, axis=1)
                             df_highs = df_highs.drop(df_highs[df_highs['compare_flg'] == 0].index)
 
                             if not df_highs.empty:
@@ -1133,6 +1164,7 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
                 elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is True and r_query_et['status'] == 'NEW' and r_query_sl['status'] == 'CANCELED':
                     cancel_batch_order(symbol, [sl_orderId], 'FORCE MARKET CLICK IN ETSL, REMAIN SL CLEAR')
                     update_history_status(open_order_history, symbol, et_orderId, 'CANCEL')
+
                 elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is False and r_query_et['status'] == 'CANCELED' and r_query_sl['status'] == 'CANCELED':
                     update_history_status(open_order_history, symbol, et_orderId, 'CANCEL')  # TWO ET AND SL ARE CANCELED
                     print(symbol, ' IN ETSLETSL OooooooooooOOOOO    TWO ET AND SL ARE CANCELED oooOOOOOoooOOOO')
@@ -1152,17 +1184,19 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
 
                 elif r_get_open_orders_et_flg is True and r_get_open_orders_sl_flg is True and r_query_et['status'] == 'PARTIALLY_FILLED' and r_query_sl['status'] == 'NEW':
                     rt = new_tp_order(symbol, tf, fc, longshort, tp_price, r_query_et['executedQty'], et_orderId)
-                    logger.info(symbol + ' _TP_ORDER PARTIALLY_FILLED monitoring_orders_positions ' + str(rt))
+                    logger.info(symbol + ' IN ETSLETSL PARTIALLY_FILLED monitoring_orders_positions ' + str(rt))
                     # # # force cancel limit(o), sl(x)
                     cancel_batch_order(symbol, [int(et_orderId)], 'CANCEL ETSL PARTIALLY ')
+
+                elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is False and r_query_et['status'] == 'FILLED' and r_query_sl['status'] == 'EXPIRED':
+                    update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TWO ET AND SL ARE CANCELED
+                    logger.info(symbol + ' IN ETSLETSL ET:FILLED and SL:EXPIRED monitoring_orders_positions ' + str(rt))
 
                 else:
                     print(symbol, ' IN ETSLETSL OooooooooooOOOOOoooOOOOOoooOOOO')
                     logger.info(symbol + ' IN ETSLETSL OooooooooooOOOOOoooOOOOOoooOOOO')
                     print('IN ETSL: ', symbol, str(r_get_open_orders_et_flg), str(r_get_open_orders_sl_flg), r_query_et['status'], r_query_sl['status'])
                     logger.info('IN ETSL: %s %s %s %s %s ' % (symbol, str(r_get_open_orders_et_flg), str(r_get_open_orders_sl_flg), str(r_query_et['status']), str(r_query_sl['status'])))
-
-
 
 
         history_tp = [x for x in open_order_history if (x['symbol'] == symbol and x['status'] == 'TP')]
@@ -1188,22 +1222,27 @@ def monihistory_and_action(open_order_history, symbol):  # ETSL -> CANCEL       
                     # case general TP
                     pass
 
+
                 # AUTO
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp['status'] == 'FILLED' and r_query_sl['status'] == 'NEW':
                     cancel_batch_order(symbol, [sl_orderId], 'AUTO TP FILLED, REMAIN SL CLEAR')
+                    update_history_status(open_order_history, symbol, et_orderId, 'WIN')  # AUTO TP FILLED
+
+                elif r_query_tp['status'] == 'FILLED' and r_query_sl['status'] == 'EXPIRED':
                     update_history_status(open_order_history, symbol, et_orderId, 'WIN')  # AUTO TP FILLED
 
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'EXPIRED' and r_query_sl['status'] == 'FILLED':
                     # cancel_batch_order(symbol, [tp_orderId], 'AUTO SL FILLED, REMAIN TP CLEAR')
                     update_history_status(open_order_history, symbol, et_orderId, 'LOSE')  # AUTO SL FILLED
 
+
+                # FORCE
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'EXPIRED' and r_query_sl['status'] == 'EXPIRED':
                     update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
 
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED':
                     update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # AUTO TP FILLED  # TODO check win or lose
 
-                # FORCE
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp['status']=='NEW' and r_query_sl['status'] == 'NEW':
                     print('IN TP: r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp[status]==NEW and r_query_sl[status] == NEW', symbol, True if r_get_open_orders_tp else False,
                           True if r_get_open_orders_sl else False, r_query_tp['status'], r_query_sl['status'])
