@@ -41,15 +41,15 @@
     "up_to_count": 3,
     "condi_same_date": true,
 
-    "condi_compare_before_fractal": true,
+    "condi_compare_before_fractal": false,
     "condi_compare_before_fractal_strait": true,
     "condi_compare_before_fractal_shift": 1,
     "condi_compare_before_fractal_mode": 1,
 
     "condi_kelly_adaptive": true,
     "condi_kelly_window": 20,
-    "qtyrate": 0.40,
-    "krate_max": 0.70,
+    "qtyrate": 0.33,
+    "krate_max": 0.50,
     "krate_min": 0.20,
 
     "condi_plrate_adaptive": true,
