@@ -523,7 +523,7 @@ def get_trade_prices(symbol, w):
     return et_price, sl_price, tp_price
 
 
-def new_et_order(symbol, tf, fc, longshort, et_price, sl_price, tp_price, quantity, wavepattern):
+def new_et_order(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price, tp_price, quantity, wavepattern):
     params = [
         {
             "symbol": symbol,
@@ -571,7 +571,7 @@ def new_et_order(symbol, tf, fc, longshort, et_price, sl_price, tp_price, quanti
                     return False
             except:
                 pass
-            add_etsl_history(open_order_history, symbol, tf, fc, longshort, wavepattern, et_price,
+            add_etsl_history(open_order_history, symbol, tf, fc, longshort, qtyrate_k, wavepattern, et_price,
                             sl_price, tp_price, quantity, order_et['orderId'], order_sl['orderId'], order_et,
                             order_sl)
             return True
@@ -670,8 +670,11 @@ def c_in_no_double_ordering(symbol, longshort, tf, fc, w):
 
 
 def c_real_condition_by_fractal_index(df, fcnt, w, idx):  # real condititon by fractal index
-    real_condititon1 = True if (fcnt/2 < (w.idx_end - w.idx_start)) and w.idx_start == idx else False
-    real_condititon2 = True if df.iloc[idx + int(fcnt/2), 0] < (w.dates[-1]) else False
+    try:
+        real_condititon1 = True if (fcnt/2 < (w.idx_end - w.idx_start)) and w.idx_start == idx else False
+        real_condititon2 = True if df.iloc[idx + int(fcnt/2), 0] < (w.dates[-1]) else False
+    except Exception as e:
+        print(e)
     if not (real_condititon1 and real_condititon2):
         if printout: print('real_condititon ')
         return False
@@ -1022,8 +1025,8 @@ def moniwave_and_action(symbol, tf, trade_info):
                                                 #         'LONG' if longshort else 'SHORT') + '%sm %s' % (
                                                 #                                           tf, fc) + ', ET: ' + str(
                                                 #         et_price)))
-
-                                                r = new_et_order(symbol, tf, fc, longshort, et_price, sl_price, tp_price, quantity, wavepattern)
+                                                qtyrate_k = get_qtyrate_k(trade_info, qtyrate)
+                                                r = new_et_order(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price, tp_price, quantity, wavepattern)
                                                 if r:
                                                     if plotview:
                                                         plot_pattern_m(df=df,
@@ -1037,7 +1040,7 @@ def moniwave_and_action(symbol, tf, trade_info):
     return
 
 
-def add_etsl_history(open_order_history, symbol, tf, fc, longshort, w, et_price, sl_price, tp_price, quantity, et_orderId, sl_orderId, order_et, order_sl):
+def add_etsl_history(open_order_history, symbol, tf, fc, longshort, qtyrate_k, w, et_price, sl_price, tp_price, quantity, et_orderId, sl_orderId, order_et, order_sl):
     now = dt.datetime.now()
     history = {
         'id': et_orderId,
@@ -1046,6 +1049,7 @@ def add_etsl_history(open_order_history, symbol, tf, fc, longshort, w, et_price,
         'symbol': symbol,
         'timeframe': tf,
         'fcnt': fc,
+        'qtyrate_k': qtyrate_k,
         'longshort': longshort,
         'side': 'LONG' if longshort else 'SHORT',
         'wavepattern': w,
@@ -1150,12 +1154,12 @@ def update_trade_info(trade_info, c_profit, c_stoploss, open_order_history, symb
     wavepattern_history = t[6]
     position = True
 
-    qtyrate_k = get_qtyrate_k(trade_info, qtyrate)
 
     dates = str(h['update_datetime'])[:19]  #'2023-01-15 21:24:00' #TODO how to find real entry date
-    tf = h['tf']
+    tf = h['timeframe']
+    timeframe = h['timeframe']
     longshort = h['longshort']
-
+    qtyrate_k = h['qtyrate_k']
     entry_price = h['et_price']
     sl_price = h['sl_price']
     tp_price = h['tp_price']
@@ -1180,7 +1184,7 @@ def update_trade_info(trade_info, c_profit, c_stoploss, open_order_history, symb
             trade_inout_i = []
             if c_stoploss:
                 win_lose_flg = 0
-                position_sl_i = [dates[i], sl_price]
+                position_sl_i = [dates, sl_price]
                 pnl_percent = -(abs(entry_price - sl_price) / entry_price) * qtyrate_k
                 fee_percent = fee_limit_sl
                 trade_count.append(0)
@@ -1190,7 +1194,7 @@ def update_trade_info(trade_info, c_profit, c_stoploss, open_order_history, symb
 
             if c_profit:
                 win_lose_flg = 1
-                position_pf_i = [dates[i], tp_price]
+                position_pf_i = [dates, tp_price]
                 pnl_percent = (abs(tp_price - entry_price) / entry_price) * qtyrate_k
                 fee_percent = fee_limit_tp
                 trade_count.append(1)
@@ -1252,13 +1256,15 @@ def update_trade_info(trade_info, c_profit, c_stoploss, open_order_history, symb
 
             if True:
                 s_11 = symbol + '           '
+                trade_in = 'trade_in'  # trade_inout_i[0][0][2:-3]
+                trade_out = 'trade_out'  # trade_inout_i[1][0][8:-3]
                 ll = '%s %s %s %s %s x%s %s-%s %s %s %s %s %s %s - %s' % (str(qtyrate_k), str(
                     condi_compare_before_fractal_mode) + ' :shift=' + str(condi_compare_before_fractal_shift),
                                                                                  timeframe, s_11[:11], tf, qtyrate_k,
                                                                                  period_days_ago, period_days_ago_till,
                                                                                  fcnt, 'L' if longshort else 'S',
-                                                                                 trade_inout_i[0][0][2:-3], '-',
-                                                                                 trade_inout_i[1][0][8:-3],
+                                                                                 trade_in, '-',
+                                                                                 trade_out,
                                                                                  str(trade_stats), str(
                     [entry_price, sl_price, tp_price, out_price]))
                 print(ll)
@@ -1542,6 +1548,10 @@ def cancel_all_closes():
 
 
 if __name__ == '__main__':
+    import time
+    from apscheduler.schedulers.blocking import BlockingScheduler
+
+    sched = BlockingScheduler()  # https://hello-bryan.tistory.com/216
     print("""
 
      _____             _ _              ______       _
@@ -1573,7 +1583,6 @@ if __name__ == '__main__':
     wavepattern_history = []
     trade_info = [stats_history, order_history, asset_history, trade_count, fee_history, pnl_history,
                   wavepattern_history]
-
     while True:
         # if i % 10 == 1:
         logger.info(f'{i} start: {time.strftime("%H:%M:%S")}')
