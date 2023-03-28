@@ -256,6 +256,9 @@ def api_call(method, arglist, **kwargs):
         elif method == 'get_position_risk':
             symbol = arglist[0]
             response = um_futures_client.get_position_risk(symbol=symbol, recvWindow=6000)
+        elif method == 'get_account_trades':
+            symbol = arglist[0]
+            response = um_futures_client.get_account_trades(symbol=symbol, recvWindow=6000)
         elif method == 'cancel_batch_order':
             symbol = arglist[0]
             orderIdList = arglist[1]
@@ -1279,6 +1282,52 @@ def update_trade_info(trade_info, c_profit, c_stoploss, open_order_history, symb
 
     return trade_info
 
+def get_account_trades(symbol, et_orderId, sl_orderId, tp_orderId):
+    ids_list = list()
+    ids_list.append(et_orderId)
+    if sl_orderId:
+        ids_list.append(sl_orderId)
+    if tp_orderId:
+        ids_list.append(tp_orderId)
+    rt = um_futures_client.get_account_trades(symbol=symbol, recvWindow=6000)
+    # rt = api_call('get_account_trades', [symbol])
+
+    r = [x for i, x in enumerate(rt) if x['orderId'] in ids_list]
+    df = pd.DataFrame.from_records(r)
+    df['qty'] = df['qty'].apply(pd.to_numeric)
+    df['quoteQty'] = df['quoteQty'].apply(pd.to_numeric)
+    df['realizedPnl'] = df['realizedPnl'].apply(pd.to_numeric)
+    df['commission'] = df['commission'].apply(pd.to_numeric)
+
+    df['qty'] = df.groupby(['orderId'])['qty'].transform('sum')
+    df['quoteQty'] = df.groupby(['orderId'])['quoteQty'].transform('sum')
+    df['realizedPnl'] = df.groupby(['orderId'])['realizedPnl'].transform('sum')
+    df['commission'] = df.groupby(['orderId'])['commission'].transform('sum')
+    df = df.drop_duplicates(subset=['orderId'])
+    df['time_dt'] = df.apply(
+        lambda x: str(dt.datetime.fromtimestamp(float(x['time']) / 1000).strftime('%Y-%m-%d %H:%M:%S')), axis=1)
+    df['date'] = df.apply(lambda x: str(dt.datetime.fromtimestamp(float(x['time']) / 1000).strftime('%Y-%m-%d')), axis=1)
+    df.sort_values(by='time_dt', ascending=False, inplace=True)  # https://sparkbyexamples.com/pandas/sort-pandas-dataframe-by-date/
+
+    df['commission_tot'] = df.groupby([symbol])['commission'].transform('sum')
+    df['realizedPnl_tot'] = df.groupby([symbol])['realizedPnl'].transform('sum')
+
+    # print(df)
+    pnl = df['realizedPnl_tot'].iat[0]
+    commission = df['commission_tot'].iat[0]
+    marginAsset = df['marginAsset'].iat[0]
+    commissionAsset = df['commissionAsset'].iat[0]
+    trans_price = 1
+    if marginAsset == 'BUSD' or commissionAsset == 'BNB':
+        trans_price = float(um_futures_client.ticker_price('BNBUSDT')['price'])
+        # trans_price = float(api_call('ticker_price', ['BNBUSDT'])['price'])
+    if marginAsset == 'BUSD':
+        pnl = float(pnl) * trans_price
+    if commissionAsset == 'BNB':
+        commission = float(commission) * trans_price
+    return df, pnl, commission
+
+
 def monihistory_and_action(open_order_history, symbol, trade_info):  # ETSL -> CANCEL        or       TP -> WIN or LOSE
     if open_order_history:
         history_new = [x for x in open_order_history if (x['symbol'] == symbol and x['status'] == 'ETSL')]
@@ -1397,28 +1446,39 @@ def monihistory_and_action(open_order_history, symbol, trade_info):  # ETSL -> C
                     # case general TP
                     pass
 
+                elif r_get_open_orders_tp_flg is True and r_get_open_orders_sl_flg is True and r_query_tp['status'] =='PARTIALLY_FILLED' and r_query_sl['status'] == 'NEW':
+                    # case wait to TP full filled or SL filled
+                    print(symbol, ' IN TPTP PARTIALLY_FILLED and NEW OooxxxTTTTTPPPPPPxxxO')
+                    logger.info(symbol + ' IN TPTP PARTIALLY_FILLED and NEW OooxxxTTTTTPPPPPPxxxO')
+                    pass
 
                 # AUTO
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp['status'] == 'FILLED' and r_query_sl['status'] == 'NEW':
                     cancel_batch_order(symbol, [sl_orderId], 'AUTO TP FILLED, REMAIN SL CLEAR')
                     update_history_status(open_order_history, symbol, et_orderId, 'WIN')  # AUTO TP FILLED
-                    trade_info = update_trade_info(trade_info, True, False, open_order_history, symbol, int(et_orderId))
+
+                    df_t, realizedPnl_tot, commission_tot = get_account_trades(symbol, et_orderId, None, tp_orderId)
+                    print(df_t, realizedPnl_tot, commission_tot)
 
                 elif r_query_tp['status'] == 'FILLED' and r_query_sl['status'] == 'EXPIRED':
                     update_history_status(open_order_history, symbol, et_orderId, 'WIN')  # AUTO TP FILLED
                     trade_info = update_trade_info(trade_info, True, False, open_order_history, symbol, int(et_orderId))
+
+                    df_t, realizedPnl_tot, commission_tot = get_account_trades(symbol, et_orderId, None, tp_orderId)
+                    print(df_t, realizedPnl_tot, commission_tot)
 
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'EXPIRED' and r_query_sl['status'] == 'FILLED':
                     # cancel_batch_order(symbol, [tp_orderId], 'AUTO SL FILLED, REMAIN TP CLEAR')
                     update_history_status(open_order_history, symbol, et_orderId, 'LOSE')  # AUTO SL FILLED
                     trade_info = update_trade_info(trade_info, False, True, open_order_history, symbol, int(et_orderId))
 
-
-                # FORCE
+                    df_t, realizedPnl_tot, commission_tot = get_account_trades(symbol, et_orderId, sl_orderId, None)
+                    print(df_t, realizedPnl_tot, commission_tot)
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'EXPIRED' and r_query_sl['status'] == 'EXPIRED':
                     logger.info('IN TPTP EXPIRED EXPIRED: %s %s %s %s %s ' % (symbol, str(r_get_open_orders_tp_flg), str(r_get_open_orders_sl_flg), str(r_query_tp['status']), str(r_query_sl['status'])))
-                    update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # TODO check win or lose
+                    update_history_status(open_order_history, symbol, et_orderId, 'LOSE')  # TODO check win or lose  # when duplicate order's case, before orderID take this orderId's realizedPnl, so decide this to LOSE it happen just LOSE
 
+                # FORCE
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED':
                     logger.info('IN TPTP FILLED FILLED: %s %s %s %s %s ' % (symbol, str(r_get_open_orders_tp_flg), str(r_get_open_orders_sl_flg), str(r_query_tp['status']), str(r_query_sl['status'])))
                     update_history_status(open_order_history, symbol, et_orderId, 'FORCE')  # AUTO TP FILLED  # TODO check win or lose
