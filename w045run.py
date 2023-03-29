@@ -443,35 +443,34 @@ def set_price(symbol, price, longshort):
             return cost
 
 
-def my_available_balance(s, exchange_symbol):
-    response = api_call('balance', [])
-    if response:
-        if exchange_symbol == 'binance_usdt_busd_perp':
-            if s[-4:] == 'USDT':
-                my_marginavailable_l = [x['marginAvailable'] for x in response if x['asset'] == 'USDT']
-                my_marginbalance_l = [x['availableBalance'] for x in response if x['asset'] == 'USDT']
-                my_walletbalance_l = [x['balance'] for x in response if x['asset'] == 'USDT']
-                if len(my_marginbalance_l) == 1:
-                    return my_marginavailable_l[0], float(my_marginbalance_l[0]), float(my_walletbalance_l[0])
-            if s[-4:] == 'BUSD':
-                my_marginavailable_l = [x['marginAvailable'] for x in response if x['asset'] == 'BUSD']
-                my_marginbalance_l = [x['availableBalance'] for x in response if x['asset'] == 'BUSD']
-                my_walletbalance_l = [x['balance'] for x in response if x['asset'] == 'BUSD']
-                if len(my_marginbalance_l) == 1:
-                    return my_marginavailable_l[0], float(my_marginbalance_l[0]), float(my_walletbalance_l[0])
-        if exchange_symbol == 'binance_usdt_perp':
-            my_marginavailable_l = [x['marginAvailable'] for x in response if x['asset'] == 'USDT']
-            my_marginbalance_l = [x['availableBalance'] for x in response if x['asset'] == 'USDT']
-            my_walletbalance_l = [x['balance'] for x in response if x['asset'] == 'USDT']
-            if len(my_marginbalance_l) == 1:
-                return my_marginavailable_l[0], float(my_marginbalance_l[0]), float(my_walletbalance_l[0])
-        elif exchange_symbol == 'binance_busd_perp':
-            my_marginavailable_l = [x['marginAvailable'] for x in response if x['asset'] == 'BUSD']
-            my_marginbalance_l = [x['availableBalance'] for x in response if x['asset'] == 'BUSD']
-            my_walletbalance_l = [x['balance'] for x in response if x['asset'] == 'BUSD']
-            if len(my_marginbalance_l) == 1:
-                return my_marginavailable_l[0], float(my_marginbalance_l[0]), float(my_walletbalance_l[0])
-    return False, 0, 0
+def set_price_for_tp(order_history, symbol, price, longshort):  # if has same price, make it different
+    if order_history:
+        symbol_order_history = [x for x in order_history if x[0] == symbol]
+        symbol_order_history_last_10 = symbol_order_history
+        if len(symbol_order_history) >= 10:
+            symbol_order_history_last_10 = symbol_order_history[-10:]
+
+        tp_prices = [x[3] for x in symbol_order_history_last_10]
+
+        if price in tp_prices:
+            tp_prices_sorted = sorted(tp_prices, key=lambda x: float(x), reverse=(True if longshort else False))
+            print(price, 'in', tp_prices_sorted)
+            e_info = exchange_info['symbols']  # pull list of symbols
+            for x in range(len(e_info)):  # find length of list and run loop
+                if e_info[x]['symbol'] == symbol:  # until we find our coin
+                    tickSize = e_info[x]["filters"][0]['tickSize']  # break into filters pulling tick size
+
+                    # price = round_step_size(price - float(tickSize), float(tickSize))  # make it 'one tickSize' different for more taker tp done
+
+                    for other_tp in tp_prices_sorted:
+                        if price == other_tp:
+                            price = round_step_size(price - float(tickSize), float(tickSize)) \
+                                if longshort \
+                                else round_step_size(price + float(tickSize),float(tickSize))
+
+                    print(price, 'changed tp price')
+                    return price
+    return price
 
 
 def step_size_to_precision(ss):
@@ -508,7 +507,7 @@ def get_i_r(list, key, value):
     return None, None
 
 
-def get_trade_prices(symbol, w):
+def get_trade_prices(order_history, symbol, longshort, w):
     w0 = w.values[0]
     w1 = w.values[1]
     w2 = w.values[3]
@@ -523,6 +522,7 @@ def get_trade_prices(symbol, w):
     et_price = set_price(symbol, et_price, None)
     sl_price = set_price(symbol, sl_price, None)
     tp_price = set_price(symbol, tp_price, None)
+    tp_price = set_price_for_tp(order_history, symbol, tp_price, longshort)
     return et_price, sl_price, tp_price
 
 
@@ -636,21 +636,21 @@ def cancel_batch_order(symbol, order_id_l, desc):
     return False
 
 
-def c_plrate_adaptive(symbol, w):
-    et_price, sl_price, tp_price = get_trade_prices(symbol, w)
+def c_plrate_adaptive(order_history, symbol, longshort, w):
+    et_price, sl_price, tp_price = get_trade_prices(order_history, symbol, longshort, w)
     b_symbol = abs(tp_price - et_price) / abs(sl_price - et_price)  # one trade profitlose rate
     if condi_plrate_adaptive:
         if b_symbol > condi_plrate_rate or condi_plrate_rate_min > b_symbol:
             return False
     return True
 
-def c_in_no_double_ordering(symbol, longshort, tf, fc, w):
+def c_in_no_double_ordering(order_history, symbol, longshort, tf, fc, w):
     #####  이중 new limit order 방지 로직 start #####
     history_new = [x for x in open_order_history if
                    (x['symbol'] == symbol and x['status'] == 'ETSL'
                     and x['timeframe'] == tf and x['fcnt'] == fc)]
 
-    et_price, sl_price, tp_price = get_trade_prices(symbol, w)
+    et_price, sl_price, tp_price = get_trade_prices(order_history, symbol, longshort, w)
 
     if len(history_new) > 0:
         for history in history_new:
@@ -691,8 +691,8 @@ def c_active_no_empty(df, w):
     return True
 
 
-def c_active_next_bean_ok(df, symbol, longshort, w):
-    et_price, sl_price, tp_price = get_trade_prices(symbol, w)
+def c_active_next_bean_ok(df, order_history, symbol, longshort, w):
+    et_price, sl_price, tp_price = get_trade_prices(order_history, symbol, longshort, w)
     df_active_next = df[w.idx_end + 1: w.idx_end + 2]  # 웨이브가 끝나고 하나의 봉을 더 보고 그 다음부터 거래가 가능
     if not df_active_next.empty:
         df_active_next_high = df_active_next['High'].iat[0]
@@ -747,13 +747,13 @@ def c_currentprice_in_zone_by_prices(symbol, longshort, et_price, tp_price):
     return True
 
 
-def c_active_in_zone(df, symbol, longshort, w):
+def c_active_in_zone(df, order_history, symbol, longshort, w):
     w_start_price = w.values[0]  # wave1
     w_end_price = w.values[-1]  # wave5
     height_price = abs(w_end_price - w_start_price)
     o_fibo_value = height_price * o_fibo / 100 if o_fibo else 0
 
-    et_price, sl_price, tp_price = get_trade_prices(symbol, w)
+    et_price, sl_price, tp_price = get_trade_prices(order_history, symbol, longshort, w)
 
     df_active = df.loc[df['Date'] > w.dates[-1]]  # 2023.3.13 after liqu  # df[w.idx_end + 1:]
 
@@ -773,10 +773,11 @@ def c_active_in_zone(df, symbol, longshort, w):
     return True
 
 
-def c_in_no_risk(symbol, w, trade_info, qtyrate):
-
+def c_in_no_risk(symbol, longshort, w, trade_info, qtyrate):
+    t = trade_info
+    order_history = t[1]
     qtyrate_k = get_qtyrate_k(trade_info, qtyrate)
-    et_price, sl_price, tp_price = get_trade_prices(symbol, w)
+    et_price, sl_price, tp_price = get_trade_prices(order_history, symbol, longshort, w)
 
     if c_risk_beyond_flg:
         pnl_percent_sl = (abs(et_price - sl_price) / et_price) * qtyrate_k
@@ -796,26 +797,56 @@ def c_in_no_risk(symbol, w, trade_info, qtyrate):
 
 
 def check_cons_for_new_etsl_order(df, symbol, tf, fc, longshort, w, idx, trade_info, qtyrate):
-
-    if not c_plrate_adaptive(symbol, w):
+    if not c_plrate_adaptive(trade_info[1], symbol, longshort, w):
         return False
     if not c_real_condition_by_fractal_index(df, fc, w, idx):
         return False
     if not c_active_no_empty(df, w):
         return False
-    if not c_active_next_bean_ok(df, symbol, longshort, w):
+    if not c_active_next_bean_ok(df, trade_info[1], symbol, longshort, w):
         return False
-    if not c_active_in_zone(df, symbol, longshort, w):
+    if not c_active_in_zone(df, trade_info[1], symbol, longshort, w):
         return False
     if not c_active_in_time(df, w):
         return False
     if not c_currentprice_in_zone(symbol, longshort, w):
         return False
-    if not c_in_no_risk(symbol, w, trade_info, qtyrate):
+    if not c_in_no_risk(symbol, longshort, w, trade_info, qtyrate):
         return False
-    if not c_in_no_double_ordering(symbol, longshort, tf, fc, w):
+    if not c_in_no_double_ordering(trade_info[1], symbol, longshort, tf, fc, w):
         return False
     return True
+
+
+def my_available_balance(s, exchange_symbol):
+    response = api_call('balance', [])
+    if response:
+        if exchange_symbol == 'binance_usdt_busd_perp':
+            if s[-4:] == 'USDT':
+                my_marginavailable_l = [x['marginAvailable'] for x in response if x['asset'] == 'USDT']
+                my_marginbalance_l = [x['availableBalance'] for x in response if x['asset'] == 'USDT']
+                my_walletbalance_l = [x['balance'] for x in response if x['asset'] == 'USDT']
+                if len(my_marginbalance_l) == 1:
+                    return my_marginavailable_l[0], float(my_marginbalance_l[0]), float(my_walletbalance_l[0])
+            if s[-4:] == 'BUSD':
+                my_marginavailable_l = [x['marginAvailable'] for x in response if x['asset'] == 'BUSD']
+                my_marginbalance_l = [x['availableBalance'] for x in response if x['asset'] == 'BUSD']
+                my_walletbalance_l = [x['balance'] for x in response if x['asset'] == 'BUSD']
+                if len(my_marginbalance_l) == 1:
+                    return my_marginavailable_l[0], float(my_marginbalance_l[0]), float(my_walletbalance_l[0])
+        if exchange_symbol == 'binance_usdt_perp':
+            my_marginavailable_l = [x['marginAvailable'] for x in response if x['asset'] == 'USDT']
+            my_marginbalance_l = [x['availableBalance'] for x in response if x['asset'] == 'USDT']
+            my_walletbalance_l = [x['balance'] for x in response if x['asset'] == 'USDT']
+            if len(my_marginbalance_l) == 1:
+                return my_marginavailable_l[0], float(my_marginbalance_l[0]), float(my_walletbalance_l[0])
+        elif exchange_symbol == 'binance_busd_perp':
+            my_marginavailable_l = [x['marginAvailable'] for x in response if x['asset'] == 'BUSD']
+            my_marginbalance_l = [x['availableBalance'] for x in response if x['asset'] == 'BUSD']
+            my_walletbalance_l = [x['balance'] for x in response if x['asset'] == 'BUSD']
+            if len(my_marginbalance_l) == 1:
+                return my_marginavailable_l[0], float(my_marginbalance_l[0]), float(my_walletbalance_l[0])
+    return False, 0, 0
 
 
 def c_balance_and_calc_quanty(symbol):
@@ -1018,7 +1049,7 @@ def moniwave_and_action(symbol, tf, trade_info):
                                     if check_cons_for_new_etsl_order(df_all, symbol, tf, fc, longshort, wavepattern, i, trade_info, qtyrate):
                                         available, quantity = c_balance_and_calc_quanty(symbol)
                                         if available:
-                                            et_price, sl_price, tp_price = get_trade_prices(symbol, wavepattern)
+                                            et_price, sl_price, tp_price = get_trade_prices(trade_info[1], symbol, longshort, wavepattern)
                                             try:
                                                 # plot_pattern_m(df=df,
                                                 #                wave_pattern=[[1, wavepattern.dates[0], id(wavepattern),
@@ -1141,190 +1172,199 @@ def get_qtyrate_k(trade_info, qtyrate):
 
 
 def update_trade_info(trade_info, c_profit, c_stoploss, open_order_history, symbol, h_id):
-    h = None
-    if open_order_history:
-        history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
-        open_order_history[history_idx] = history_id  # replace history
-        h = open_order_history[history_idx]
+    try:
+        h = None
+        if open_order_history:
+            history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
+            open_order_history[history_idx] = history_id  # replace history
+            h = open_order_history[history_idx]
 
-    t = trade_info
-    stats_history = t[0]
-    order_history = t[1]
-    asset_history = t[2]
-    trade_count = t[3]
-    fee_history = t[4]
-    pnl_history = t[5]
-    wavepattern_history = t[6]
-    position = True
+        t = trade_info
+        stats_history = t[0]
+        order_history = t[1]
+        asset_history = t[2]
+        trade_count = t[3]
+        fee_history = t[4]
+        pnl_history = t[5]
+        wavepattern_history = t[6]
+        position = True
 
 
-    dates = str(h['update_datetime'])[:19]  #'2023-01-15 21:24:00' #TODO how to find real entry date
-    tf = h['timeframe']
-    timeframe = h['timeframe']
-    longshort = h['longshort']
-    qtyrate_k = h['qtyrate_k']
-    entry_price = h['et_price']
-    sl_price = h['sl_price']
-    tp_price = h['tp_price']
-    wavepattern = h['wavepattern']
+        dates = str(h['update_datetime'])[:19]  #'2023-01-15 21:24:00' #TODO how to find real entry date
+        tf = h['timeframe']
+        timeframe = h['timeframe']
+        longshort = h['longshort']
+        qtyrate_k = h['qtyrate_k']
+        entry_price = h['et_price']
+        sl_price = h['sl_price']
+        tp_price = h['tp_price']
+        wavepattern = h['wavepattern']
 
-    b_symbol = abs(tp_price - entry_price) / abs(sl_price - entry_price)  # one trade profitlose rate
+        b_symbol = abs(tp_price - entry_price) / abs(sl_price - entry_price)  # one trade profitlose rate
 
-    position_enter_i = []
-    if position is True:
+        position_enter_i = []
+        if position is True:
 
-        if c_profit or c_stoploss:
-            fee_limit_tp = 0
-            if tp_type == 'maker':
-                fee_limit_tp = (fee_limit + fee_tp) * qtyrate_k
-            elif tp_type == 'taker':
-                fee_limit_tp = (fee_limit + fee_tp + fee_slippage) * qtyrate_k
-            fee_limit_sl = (fee_limit + fee_sl + fee_slippage) * qtyrate_k
+            if c_profit or c_stoploss:
+                fee_limit_tp = 0
+                if tp_type == 'maker':
+                    fee_limit_tp = (fee_limit + fee_tp) * qtyrate_k
+                elif tp_type == 'taker':
+                    fee_limit_tp = (fee_limit + fee_tp + fee_slippage) * qtyrate_k
+                fee_limit_sl = (fee_limit + fee_sl + fee_slippage) * qtyrate_k
 
-            fee_percent = 0
-            pnl_percent = 0
-            win_lose_flg = 0
-            trade_inout_i = []
-            if c_stoploss:
+                fee_percent = 0
+                pnl_percent = 0
                 win_lose_flg = 0
-                position_sl_i = [dates, sl_price]
-                pnl_percent = -(abs(entry_price - sl_price) / entry_price) * qtyrate_k
-                fee_percent = fee_limit_sl
-                trade_count.append(0)
-                trade_inout_i = [position_enter_i, position_sl_i, longshort, '-']
-                out_price = sl_price
-                order_history.append(trade_inout_i)
+                trade_inout_i = []
+                if c_stoploss:
+                    win_lose_flg = 0
+                    position_sl_i = [dates, sl_price]
+                    pnl_percent = -(abs(entry_price - sl_price) / entry_price) * qtyrate_k
+                    fee_percent = fee_limit_sl
+                    trade_count.append(0)
+                    trade_inout_i = [position_enter_i, position_sl_i, longshort, '-']
+                    out_price = sl_price
+                    order_history.append(trade_inout_i)
 
-            if c_profit:
-                win_lose_flg = 1
-                position_pf_i = [dates, tp_price]
-                pnl_percent = (abs(tp_price - entry_price) / entry_price) * qtyrate_k
-                fee_percent = fee_limit_tp
-                trade_count.append(1)
-                trade_inout_i = [position_enter_i, position_pf_i, longshort, '+']
-                out_price = tp_price
-                order_history.append(trade_inout_i)
+                if c_profit:
+                    win_lose_flg = 1
+                    position_pf_i = [dates, tp_price]
+                    pnl_percent = (abs(tp_price - entry_price) / entry_price) * qtyrate_k
+                    fee_percent = fee_limit_tp
+                    trade_count.append(1)
+                    trade_inout_i = [position_enter_i, position_pf_i, longshort, '+']
+                    out_price = tp_price
+                    order_history.append(trade_inout_i)
 
-            asset_history_pre = asset_history[-1] if asset_history else seed
-            asset_new = asset_history_pre * (1 + pnl_percent - fee_percent)
-            pnl_history.append(asset_history_pre * pnl_percent)
-            fee_history.append(asset_history_pre * fee_percent)
-            asset_history.append(asset_new)
-            wavepattern_history.append(wavepattern)
+                asset_history_pre = asset_history[-1] if asset_history else seed
+                asset_new = asset_history_pre * (1 + pnl_percent - fee_percent)
+                pnl_history.append(asset_history_pre * pnl_percent)
+                fee_history.append(asset_history_pre * fee_percent)
+                asset_history.append(asset_new)
+                wavepattern_history.append(wavepattern)
 
-            winrate = (sum(trade_count) / len(trade_count)) * 100
+                winrate = (sum(trade_count) / len(trade_count)) * 100
 
-            asset_min = seed
-            asset_max = seed
+                asset_min = seed
+                asset_max = seed
 
-            if len(stats_history) > 0:
-                asset_last_min = stats_history[-1][-2]
-                asset_min = asset_new if asset_new < asset_last_min else asset_last_min
-                asset_last_max = stats_history[-1][-1]
-                asset_max = asset_new if asset_new > asset_last_max else asset_last_max
+                if len(stats_history) > 0:
+                    asset_last_min = stats_history[-1][-2]
+                    asset_min = asset_new if asset_new < asset_last_min else asset_last_min
+                    asset_last_max = stats_history[-1][-1]
+                    asset_max = asset_new if asset_new > asset_last_max else asset_last_max
 
-            df_s = pd.DataFrame.from_records(stats_history)
-            b_cum = (df_s[8].sum() + b_symbol) / (len(df_s) + 1) if len(
-                stats_history) > 0 else b_symbol  # mean - profitlose rate, df_s[6] b_cum index
-            p_cum = winrate / 100  # win rate
-            q_cum = 1 - p_cum  # lose rate
-            tpi_cum = round(p_cum * (1 + b_cum), 2)  # trading perfomance index
-            f_cum = round(p_cum - (q_cum / b_cum), 2)  # kelly index https://igotit.tistory.com/1526
+                df_s = pd.DataFrame.from_records(stats_history)
+                b_cum = (df_s[8].sum() + b_symbol) / (len(df_s) + 1) if len(
+                    stats_history) > 0 else b_symbol  # mean - profitlose rate, df_s[6] b_cum index
+                p_cum = winrate / 100  # win rate
+                q_cum = 1 - p_cum  # lose rate
+                tpi_cum = round(p_cum * (1 + b_cum), 2)  # trading perfomance index
+                f_cum = round(p_cum - (q_cum / b_cum), 2)  # kelly index https://igotit.tistory.com/1526
 
-            f = f_cum
-            tpi = tpi_cum
-            b = b_cum
+                f = f_cum
+                tpi = tpi_cum
+                b = b_cum
 
-            if condi_kelly_adaptive:
-                if len(df_s) >= condi_kelly_window:
-                    df_s_window = df_s.iloc[-condi_kelly_window:]
-                    p = df_s_window[4].sum() / len(df_s_window)
-                    b = (df_s_window[11].sum() + b_symbol) / (
-                                len(df_s_window) + 1)  # mean in kelly window - profitlose rate
-                    q = 1 - p  # lose rate
-                    tpi = round(p * (1 + b), 2)  # trading perfomance index
-                    f = round(p - (q / b), 2)  # kelly index
+                if condi_kelly_adaptive:
+                    if len(df_s) >= condi_kelly_window:
+                        df_s_window = df_s.iloc[-condi_kelly_window:]
+                        p = df_s_window[4].sum() / len(df_s_window)
+                        b = (df_s_window[11].sum() + b_symbol) / (
+                                    len(df_s_window) + 1)  # mean in kelly window - profitlose rate
+                        q = 1 - p  # lose rate
+                        tpi = round(p * (1 + b), 2)  # trading perfomance index
+                        f = round(p - (q / b), 2)  # kelly index
 
-            # current_price = float(api_call('ticker_price', ['BNBUSDT'])['price'])
+                # current_price = float(api_call('ticker_price', ['BNBUSDT'])['price'])
 
-            trade_stats = [len(trade_count), round(winrate, 2), asset_new, symbol, win_lose_flg,
-                           'WIN' if win_lose_flg else 'LOSE', f_cum, tpi_cum, b_cum, f, tpi, b, b_symbol,
-                           str(qtyrate_k), str(round(pnl_percent, 4)), sum(pnl_history), sum(fee_history),
-                           round(asset_min, 2), round(asset_max, 2)]
-            stats_history.append(trade_stats)
-            trade_info = [stats_history, order_history, asset_history, trade_count, fee_history, pnl_history,
-                          wavepattern_history]
+                trade_stats = [len(trade_count), round(winrate, 2), asset_new, symbol, win_lose_flg,
+                               'WIN' if win_lose_flg else 'LOSE', f_cum, tpi_cum, b_cum, f, tpi, b, b_symbol,
+                               str(qtyrate_k), str(round(pnl_percent, 4)), sum(pnl_history), sum(fee_history),
+                               round(asset_min, 2), round(asset_max, 2)]
+                stats_history.append(trade_stats)
+                trade_info = [stats_history, order_history, asset_history, trade_count, fee_history, pnl_history,
+                              wavepattern_history]
 
-            # wavepattern_tpsl_l.append([idx, wavepattern.dates[0], id(wavepattern), wavepattern])
+                # wavepattern_tpsl_l.append([idx, wavepattern.dates[0], id(wavepattern), wavepattern])
 
-            if True:
-                s_11 = symbol + '           '
-                trade_in = 'trade_in'  # trade_inout_i[0][0][2:-3]
-                trade_out = 'trade_out'  # trade_inout_i[1][0][8:-3]
-                ll = '%s %s %s %s %s x%s %s-%s %s %s %s %s %s %s - %s' % (str(qtyrate_k), str(
-                    condi_compare_before_fractal_mode) + ' :shift=' + str(condi_compare_before_fractal_shift),
-                                                                                 timeframe, s_11[:11], tf, qtyrate_k,
-                                                                                 period_days_ago, period_days_ago_till,
-                                                                                 fcnt, 'L' if longshort else 'S',
-                                                                                 trade_in, '-',
-                                                                                 trade_out,
-                                                                                 str(trade_stats), str(
-                    [entry_price, sl_price, tp_price, out_price]))
-                print(ll)
-                logger.info(ll)
+                if True:
+                    s_11 = symbol + '           '
+                    trade_in = 'trade_in'  # trade_inout_i[0][0][2:-3]
+                    trade_out = 'trade_out'  # trade_inout_i[1][0][8:-3]
+                    ll = '%s %s %s %s %s x%s %s-%s %s %s %s %s %s %s - %s' % (str(qtyrate_k), str(
+                        condi_compare_before_fractal_mode) + ' :shift=' + str(condi_compare_before_fractal_shift),
+                                                                                     timeframe, s_11[:11], tf, qtyrate_k,
+                                                                                     period_days_ago, period_days_ago_till,
+                                                                                     fcnt, 'L' if longshort else 'S',
+                                                                                     trade_in, '-',
+                                                                                     trade_out,
+                                                                                     str(trade_stats), str(
+                        [entry_price, sl_price, tp_price, out_price]))
+                    print(ll)
+                    logger.info(ll)
 
-            # if longshort is not None and len(trade_info[1]) > 0:
-            #     if plotview:
-            #         plot_pattern_m(df=df, wave_pattern=[[i, wavepattern.dates[0], id(wavepattern), wavepattern]],
-            #                        df_lows_plot=df_lows_plot, df_highs_plot=df_highs_plot, trade_info=trade_info,
-            #                        title=str(
-            #                            symbol + ' %s ' % str(longshort) + str(trade_stats)))
-
+                # if longshort is not None and len(trade_info[1]) > 0:
+                #     if plotview:
+                #         plot_pattern_m(df=df, wave_pattern=[[i, wavepattern.dates[0], id(wavepattern), wavepattern]],
+                #                        df_lows_plot=df_lows_plot, df_highs_plot=df_highs_plot, trade_info=trade_info,
+                #                        title=str(
+                #                            symbol + ' %s ' % str(longshort) + str(trade_stats)))
+    except Exception as e:
+        print(symbol + ' update_trade_info ' + str(h_id) + ' e:' + str(e))
+        logger.error(symbol + ' update_trade_info ' + str(h_id) + ' e:' + str(e))
     return trade_info
 
 def get_account_trades(symbol, et_orderId, sl_orderId, tp_orderId):
-    ids_list = list()
-    ids_list.append(et_orderId)
-    if sl_orderId:
-        ids_list.append(sl_orderId)
-    if tp_orderId:
-        ids_list.append(tp_orderId)
-    rt = um_futures_client.get_account_trades(symbol=symbol, recvWindow=6000)
-    # rt = api_call('get_account_trades', [symbol])
+    pnl = 0
+    commission = 0
+    try:
+        ids_list = list()
+        ids_list.append(et_orderId)
+        if sl_orderId:
+            ids_list.append(sl_orderId)
+        if tp_orderId:
+            ids_list.append(tp_orderId)
+        # rt = um_futures_client.get_account_trades(symbol=symbol, recvWindow=6000)
+        rt = api_call('get_account_trades', [symbol])
 
-    r = [x for i, x in enumerate(rt) if x['orderId'] in ids_list]
-    df = pd.DataFrame.from_records(r)
-    df['qty'] = df['qty'].apply(pd.to_numeric)
-    df['quoteQty'] = df['quoteQty'].apply(pd.to_numeric)
-    df['realizedPnl'] = df['realizedPnl'].apply(pd.to_numeric)
-    df['commission'] = df['commission'].apply(pd.to_numeric)
+        r = [x for i, x in enumerate(rt) if x['orderId'] in ids_list]
+        df = pd.DataFrame.from_records(r)
+        df['qty'] = df['qty'].apply(pd.to_numeric)
+        df['quoteQty'] = df['quoteQty'].apply(pd.to_numeric)
+        df['realizedPnl'] = df['realizedPnl'].apply(pd.to_numeric)
+        df['commission'] = df['commission'].apply(pd.to_numeric)
 
-    df['qty'] = df.groupby(['orderId'])['qty'].transform('sum')
-    df['quoteQty'] = df.groupby(['orderId'])['quoteQty'].transform('sum')
-    df['realizedPnl'] = df.groupby(['orderId'])['realizedPnl'].transform('sum')
-    df['commission'] = df.groupby(['orderId'])['commission'].transform('sum')
-    df = df.drop_duplicates(subset=['orderId'])
-    df['time_dt'] = df.apply(
-        lambda x: str(dt.datetime.fromtimestamp(float(x['time']) / 1000).strftime('%Y-%m-%d %H:%M:%S')), axis=1)
-    df['date'] = df.apply(lambda x: str(dt.datetime.fromtimestamp(float(x['time']) / 1000).strftime('%Y-%m-%d')), axis=1)
-    df.sort_values(by='time_dt', ascending=False, inplace=True)  # https://sparkbyexamples.com/pandas/sort-pandas-dataframe-by-date/
+        df['qty'] = df.groupby(['orderId'])['qty'].transform('sum')
+        df['quoteQty'] = df.groupby(['orderId'])['quoteQty'].transform('sum')
+        df['realizedPnl'] = df.groupby(['orderId'])['realizedPnl'].transform('sum')
+        df['commission'] = df.groupby(['orderId'])['commission'].transform('sum')
+        df = df.drop_duplicates(subset=['orderId'])
+        df['time_dt'] = df.apply(
+            lambda x: str(dt.datetime.fromtimestamp(float(x['time']) / 1000).strftime('%Y-%m-%d %H:%M:%S')), axis=1)
+        df['date'] = df.apply(lambda x: str(dt.datetime.fromtimestamp(float(x['time']) / 1000).strftime('%Y-%m-%d')), axis=1)
+        df.sort_values(by='time_dt', ascending=False, inplace=True)  # https://sparkbyexamples.com/pandas/sort-pandas-dataframe-by-date/
 
-    df['commission_tot'] = df.groupby([symbol])['commission'].transform('sum')
-    df['realizedPnl_tot'] = df.groupby([symbol])['realizedPnl'].transform('sum')
+        df['commission_tot'] = df.groupby(['symbol'])['commission'].transform('sum')
+        df['realizedPnl_tot'] = df.groupby(['symbol'])['realizedPnl'].transform('sum')
 
-    # print(df)
-    pnl = df['realizedPnl_tot'].iat[0]
-    commission = df['commission_tot'].iat[0]
-    marginAsset = df['marginAsset'].iat[0]
-    commissionAsset = df['commissionAsset'].iat[0]
-    trans_price = 1
-    if marginAsset == 'BUSD' or commissionAsset == 'BNB':
-        trans_price = float(um_futures_client.ticker_price('BNBUSDT')['price'])
-        # trans_price = float(api_call('ticker_price', ['BNBUSDT'])['price'])
-    if marginAsset == 'BUSD':
-        pnl = float(pnl) * trans_price
-    if commissionAsset == 'BNB':
-        commission = float(commission) * trans_price
+        # print(df)
+        pnl = df['realizedPnl_tot'].iat[0]
+        commission = df['commission_tot'].iat[0]
+        marginAsset = df['marginAsset'].iat[0]
+        commissionAsset = df['commissionAsset'].iat[0]
+        trans_price = 1
+        if marginAsset == 'BUSD' or commissionAsset == 'BNB':
+            # trans_price = float(um_futures_client.ticker_price('BNBUSDT')['price'])
+            trans_price = float(api_call('ticker_price', ['BNBUSDT'])['price'])
+        if marginAsset == 'BUSD':
+            pnl = float(pnl) * trans_price
+        if commissionAsset == 'BNB':
+            commission = float(commission) * trans_price
+    except Exception as e:
+        print('get_account_trades:%s' % str(e))
+        logger.error('get_account_trades:%s' % str(e))
     return df, pnl, commission
 
 
