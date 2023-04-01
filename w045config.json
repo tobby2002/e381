@@ -4,7 +4,7 @@
     "descrition": "045 MONIHISTORY refactoried version added ft fcnt monitp fractal shift plrate < 0.5 trade_info tpsetprice",
     "_exchange": "bybit_usdt_perp, binance_usdt_perp, binance_busd_perp binance_usdt_busd_perp",
     "exchange": "BINANCE",
-    "exchange_symbol": "binance_usdt_busd_perp",
+    "exchange_symbol": "binance_usdt_perp",
     "futures": true,
     "_trade_type": "[long, short] or [long] or [short]",
     "type": ["long", "short"],
