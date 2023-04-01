@@ -98,5 +98,8 @@
   "futures": {
     "secret_key": "29Md2FYOblEkV5A1ycfSHNTCB1VGYRaVUJQt7djIR5BnFPOEZlHGBmyTqrTmu343",
     "secret_value": "tiJphcdckYTBBUbe2nsv0IU78SvhdXjqW9v3rJ1vFSsvgagRcmqUqinziNCcghYD"
+  },
+  "message": {
+    "botfather_token": "12345"
   }
 }
