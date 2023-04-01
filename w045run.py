@@ -12,6 +12,7 @@ from backoff import on_exception, expo
 from binancefutures.um_futures import UMFutures
 from binancefutures.error import ClientError
 from binance.helpers import round_step_size
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 
 import shutup; shutup.please()
 import json
@@ -1287,8 +1288,6 @@ def update_trade_info(trade_info, c_profit, c_stoploss, open_order_history, symb
                 trade_info = [stats_history, order_history, asset_history, trade_count, fee_history, pnl_history,
                               wavepattern_history]
 
-                # wavepattern_tpsl_l.append([idx, wavepattern.dates[0], id(wavepattern), wavepattern])
-
                 if True:
                     s_11 = symbol + '           '
                     trade_in = 'trade_in'  # trade_inout_i[0][0][2:-3]
@@ -1302,7 +1301,7 @@ def update_trade_info(trade_info, c_profit, c_stoploss, open_order_history, symb
                                                                                      trade_out,
                                                                                      str(trade_stats), str(
                         [et_price, sl_price, tp_price, out_price]))
-                    print(ll)
+                    # print(ll)
                     logger.info(ll)
 
                 # if longshort is not None and len(trade_info[1]) > 0:
@@ -1315,6 +1314,7 @@ def update_trade_info(trade_info, c_profit, c_stoploss, open_order_history, symb
         print(symbol + ' update_trade_info ' + str(h_id) + ' e:' + str(e))
         logger.error(symbol + ' update_trade_info ' + str(h_id) + ' e:' + str(e))
     return trade_info
+
 
 def get_account_trades(symbol, et_orderId, sl_orderId, tp_orderId):
     pnl = 0
@@ -1504,23 +1504,33 @@ def monihistory_and_action(open_order_history, symbol, trade_info):  # ETSL -> C
                     update_history_status(open_order_history, symbol, et_orderId, 'WIN')  # AUTO TP FILLED
 
                     df_t, realizedPnl_tot, commission_tot = get_account_trades(symbol, et_orderId, None, tp_orderId)
-                    print(df_t, realizedPnl_tot, commission_tot)
+                    print(str([symbol, int(et_orderId), df_t, realizedPnl_tot, commission_tot]))
+                    logger.info(str([symbol, int(et_orderId), df_t, realizedPnl_tot, commission_tot]))
 
                 elif r_query_tp['status'] == 'FILLED' and r_query_sl['status'] == 'EXPIRED':
                     trade_info = update_trade_info(trade_info, True, False, open_order_history, symbol, int(et_orderId))
                     update_history_status(open_order_history, symbol, et_orderId, 'WIN')  # AUTO TP FILLED
                     df_t, realizedPnl_tot, commission_tot = get_account_trades(symbol, et_orderId, None, tp_orderId)
-                    print(df_t, realizedPnl_tot, commission_tot)
+                    print(str([symbol, int(et_orderId), df_t, realizedPnl_tot, commission_tot]))
+                    logger.info(str([symbol, int(et_orderId), df_t, realizedPnl_tot, commission_tot]))
 
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'EXPIRED' and r_query_sl['status'] == 'FILLED':
                     # cancel_batch_order(symbol, [tp_orderId], 'AUTO SL FILLED, REMAIN TP CLEAR')
                     trade_info = update_trade_info(trade_info, False, True, open_order_history, symbol, int(et_orderId))
                     update_history_status(open_order_history, symbol, et_orderId, 'LOSE')  # AUTO SL FILLED
                     df_t, realizedPnl_tot, commission_tot = get_account_trades(symbol, et_orderId, sl_orderId, None)
-                    print(df_t, realizedPnl_tot, commission_tot)
+                    print(str([symbol, int(et_orderId), df_t, realizedPnl_tot, commission_tot]))
+                    logger.info(str([symbol, int(et_orderId), df_t, realizedPnl_tot, commission_tot]))
+
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'EXPIRED' and r_query_sl['status'] == 'EXPIRED':
                     logger.info('IN TPTP EXPIRED EXPIRED: %s %s %s %s %s ' % (symbol, str(r_get_open_orders_tp_flg), str(r_get_open_orders_sl_flg), str(r_query_tp['status']), str(r_query_sl['status'])))
-                    update_history_status(open_order_history, symbol, et_orderId, 'LOSE')  # TODO check win or lose  # when duplicate order's case, before orderID take this orderId's realizedPnl, so decide this to LOSE it happen just LOSE
+
+                    trade_info = update_trade_info(trade_info, False, True, open_order_history, symbol, int(et_orderId))
+                    update_history_status(open_order_history, symbol, et_orderId, 'LOSE')  # AUTO SL FILLED
+                    df_t, realizedPnl_tot, commission_tot = get_account_trades(symbol, et_orderId, sl_orderId, None)
+                    print(str([symbol, int(et_orderId), df_t, realizedPnl_tot, commission_tot]))
+                    logger.info(str([symbol, int(et_orderId), df_t, realizedPnl_tot, commission_tot]))
+
 
                 # FORCE
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp['status'] == 'FILLED' and r_query_sl['status'] == 'FILLED':
@@ -1651,6 +1661,19 @@ def cancel_all_closes():
         logging.error('cancel_all_closes Exception e:' + str(e))
 
 
+def message_bot_main():
+    # Open the token and the dispatcher of our bot.
+    Tkn = open('token.txt').read().strip()
+    updater = Updater(token=Tkn, use_context=True)
+    dispatcher = updater.dispatcher
+
+    # Set the commands that our bot will handle.
+    dispatcher.add_handler(CommandHandler('start', start))
+    dispatcher.add_handler(MessageHandler(Filters.text, messageListener))
+
+    updater.start_polling()
+    updater.idle()
+
 if __name__ == '__main__':
     import time
     from apscheduler.schedulers.blocking import BlockingScheduler
@@ -1669,6 +1692,8 @@ if __name__ == '__main__':
 
     """ % (version, descrition))
     print_condition()
+    message_bot_main()
+
     if reset_leverage:
         set_maxleverage_allsymbol(symbols_binance_futures)
     start = time.perf_counter()
@@ -1687,6 +1712,7 @@ if __name__ == '__main__':
     wavepattern_history = []
     trade_info = [stats_history, order_history, asset_history, trade_count, fee_history, pnl_history,
                   wavepattern_history]
+
     while True:
         # if i % 10 == 1:
         logger.info(f'{i} start: {time.strftime("%H:%M:%S")}')
