@@ -125,6 +125,7 @@ file_handler = logging.FileHandler('logger_%s.log' % seq)
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
+botfather_token = config['message']['botfather_token']
 
 def print_condition():
     logger.info('-------------------------------')
@@ -1661,18 +1662,74 @@ def cancel_all_closes():
         logging.error('cancel_all_closes Exception e:' + str(e))
 
 
-def message_bot_main():
-    # Open the token and the dispatcher of our bot.
-    Tkn = open('token.txt').read().strip()
-    updater = Updater(token=Tkn, use_context=True)
-    dispatcher = updater.dispatcher
+def sendMessage(update, context, msg=None, photo=None, corrector=True):
+    try:
+        if photo:
+            context.bot.send_photo(
+                chat_id=update.effective_chat.id,
+                caption=msg,
+                photo=open(photo, 'rb'))
+        else:
+            if msg and corrector:
+                # Omit reserved characters
+                exceptions = ['`']
+                reserved = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+',
+                            '-', '=', '|', '{', '}', '.', '!']
+                msg = ''.join(['\\' + s if s in reserved and s not in exceptions
+                               else s for s in msg])
 
-    # Set the commands that our bot will handle.
-    dispatcher.add_handler(CommandHandler('start', start))
-    dispatcher.add_handler(MessageHandler(Filters.text, messageListener))
+            context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=msg,
+                parse_mode='MarkdownV2')
 
-    updater.start_polling()
-    updater.idle()
+    except Exception as e:
+        print('Error on sendMessage:', e)
+
+def messageListener(update, context):
+    if context.user_data['access']:
+        try:
+            msg = update.message.text.lstrip().lower()
+
+            # if 'thresholds' in msg and 'of' in msg:
+            #     sendThresholds(update, context, msg)
+            #
+            # elif 'summary' in msg:
+            #     summaryImage(update, context,
+            #                  today='today' in msg or 'new' in msg)
+            #
+            # elif 'open' in msg:
+            #     notClosedPositions(update, context)
+            #
+            # elif 'trade' in msg:
+            #     sendTradeCharts(update, context, msg)
+            #
+            # elif 'random' in msg:
+            #     randomFact(update, context)
+            #
+            # else:
+            if msg:
+                sendMessage(update, context, msg)
+            else:
+                sendMessage(update, context, 'Sorry, I did not understand that')
+
+        except Exception as e:
+            print('Error on messageListener:', e)
+
+
+def message_bot_main(botfather_token):
+    try:
+        updater = Updater(token=botfather_token, use_context=True)
+        dispatcher = updater.dispatcher
+
+        # Set the commands that our bot will handle.
+        dispatcher.add_handler(CommandHandler('start', start))
+        dispatcher.add_handler(MessageHandler(Filters.text, messageListener))
+
+        updater.start_polling()
+        updater.idle()
+    except Exception as e:
+        logger.error('message_bot_main e: %s' % str(e))
 
 if __name__ == '__main__':
     import time
@@ -1692,7 +1749,7 @@ if __name__ == '__main__':
 
     """ % (version, descrition))
     print_condition()
-    message_bot_main()
+    message_bot_main(botfather_token)
 
     if reset_leverage:
         set_maxleverage_allsymbol(symbols_binance_futures)
