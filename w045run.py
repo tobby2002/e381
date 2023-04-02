@@ -667,8 +667,8 @@ def c_in_no_double_ordering(open_order_history, symbol, longshort, tf, fc, w):
                 if float(r_query_limit['price']) == float(et_price) \
                         and float(r_query_limit['clientOrderId'].split('_')[2]) == float(sl_price) \
                         and float(r_query_limit['clientOrderId'].split('_')[3]) == float(tp_price_w5):
-                    print(str([symbol, longshort, tf, fc, et_price, sl_price, tp_price, tp_price_w5]))
-                    logger.info(str([symbol, longshort, tf, fc, et_price, sl_price, tp_price, tp_price_w5]))
+                    # print('c_in_no_double_ordering:' + str([symbol, longshort, tf, fc, et_price, sl_price, tp_price, tp_price_w5]))
+                    # logger.info('c_in_no_double_ordering:' + str([symbol, longshort, tf, fc, et_price, sl_price, tp_price, tp_price_w5]))
                     return False
     #####  이중 new limit order 방지 로직 start #####
     return True
@@ -1135,7 +1135,7 @@ def delete_history_status(open_order_history, symbol, h_id, event):
     if open_order_history:
         history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
         open_order_history.pop(history_idx)
-        logger.info(symbol + ' _HS delete_history_status %s' % event)
+        # logger.info(symbol + ' _HS delete_history_status %s' % event)
         dump_history_pkl()
 
 
@@ -1293,7 +1293,7 @@ def update_trade_info(trade_info, c_profit, c_stoploss, open_order_history, symb
                     s_11 = symbol + '           '
                     trade_in = 'trade_in'  # trade_inout_i[0][0][2:-3]
                     trade_out = 'trade_out'  # trade_inout_i[1][0][8:-3]
-                    ll = '%s %s %s %s %s x%s %s-%s %s %s %s %s %s %s - %s' % (str(qtyrate_k), str(
+                    ll = '||||||||||| %s %s %s %s %s x%s %s-%s %s %s %s %s %s %s - %s' % (str(qtyrate_k), str(
                         condi_compare_before_fractal_mode) + ' :shift=' + str(condi_compare_before_fractal_shift),
                                                                                      timeframe, s_11[:11], tf, qtyrate_k,
                                                                                      period_days_ago, period_days_ago_till,
