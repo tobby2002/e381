@@ -21,7 +21,7 @@
     "o_fibo": 118.0,
 
     "_period": ["period_days_ago:30 --> 30 days ago", "period_days_ago_till:0 --> now", "period_interval:1 per 1day"],
-    "timeframe": [3],
+    "timeframe": [5],
     "period_days_ago": 5,
     "period_days_ago_till": 0,
     "period_interval": 0,
@@ -36,7 +36,7 @@
 
     "_fractal_count": ["/21, 31, 51, 71  fibo:8, 13, /21, 34, 55, 89  ichimoku 9, /17, 26, 37, 43, 52 "],
     "_fcnt": [17, 26, 37],
-    "fcnt": [17, 26, 37, 43],
+    "fcnt": [26, 53],
     "loop_count": 1,
     "up_to_count": 3,
     "condi_same_date": true,
@@ -48,9 +48,9 @@
 
     "condi_kelly_adaptive": true,
     "condi_kelly_window": 20,
-    "qtyrate": 0.33,
-    "krate_max": 0.50,
-    "krate_min": 0.20,
+    "qtyrate": 0.25,
+    "krate_max": 0.35,
+    "krate_min": 0.15,
 
     "condi_plrate_adaptive": true,
     "condi_plrate_rate": 0.50,
