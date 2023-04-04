@@ -788,12 +788,12 @@ def c_in_no_risk(symbol, longshort, w, trade_info, qtyrate):
     if c_risk_beyond_flg:
         pnl_percent_sl = (abs(et_price - sl_price) / et_price) * qtyrate_k
         if pnl_percent_sl >= c_risk_beyond_max:  # decrease max sl rate   0.1 = 10%
-            logger.info(symbol + ' _c_risk_beyond_max : ' + str(pnl_percent_sl))
+            # logger.info(symbol + ' _c_risk_beyond_max : ' + str(pnl_percent_sl))
             return False
 
         pnl_percent_tp = (abs(tp_price - et_price) / et_price) * qtyrate_k
         if pnl_percent_tp <= c_risk_beyond_min:  # reduce low tp rate  0.005 = 0.5%
-            logger.info(symbol + ' _c_risk_beyond_min : ' + str(pnl_percent_tp))
+            # logger.info(symbol + ' _c_risk_beyond_min : ' + str(pnl_percent_tp))
             return False
 
     if et_price == sl_price:
