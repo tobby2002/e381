@@ -1,7 +1,7 @@
 {
   "default": {
     "version": "0.9",
-    "descrition": "045 MONIHISTORY refactoried version added ft fcnt monitp fractal shift plrate < 0.5 trade_info tpsetprice",
+    "descrition": "045 MONIHISTORY refactoried version added ft fcnt monitp fractal shift plrate < 0.5 trade_info tpsetprice v0.9 del fractal and plrate < 0.3",
     "_exchange": "bybit_usdt_perp, binance_usdt_perp, binance_busd_perp binance_usdt_busd_perp",
     "exchange": "BINANCE",
     "exchange_symbol": "binance_usdt_perp",
@@ -53,7 +53,7 @@
     "krate_min": 0.15,
 
     "condi_plrate_adaptive": true,
-    "condi_plrate_rate": 0.50,
+    "condi_plrate_rate": 0.30,
     "condi_plrate_rate_min": 0.0,
 
     "et_zone_rate": 0.5,
