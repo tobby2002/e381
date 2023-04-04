@@ -24,7 +24,7 @@ import logging
 import time
 
 
-with open('w045config.json', 'r') as f:
+with open('eLab/w045config.json', 'r') as f:
     config = json.load(f)
 
 version = config['default']['version']
@@ -112,8 +112,10 @@ plotview = config['default']['plotview']
 printout = config['default']['printout']
 init_running_trade = config['default']['init_running_trade']
 reset_leverage = config['default']['reset_leverage']
+run_mode = config['default']['run_mode']
 
 seq = dt.datetime.now().strftime("%Y%m%d_%H%M%S") + str([timeframe, fcnt, period_days_ago, period_days_ago_till])
+# seq = '{date:%Y-%m-%d_%H:%M:%S}'.format(date=dt.datetime.now())
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -200,6 +202,7 @@ def print_condition():
     logger.info('printout: %s' % printout)
     logger.info('init_running_trade: %s' % init_running_trade)
     logger.info('reset_leverage: %s' % reset_leverage)
+    logger.info('run_mode: %s' % run_mode)
     logger.info('-------------------------------')
 
 
@@ -369,12 +372,13 @@ def get_symbols():
     elif exchange_symbol == 'binance_usdt_busd_perp':
         symbols = symbols_binance_futures_USDT_BUSD
 
+    if symbol_random:
+        symbols = random.sample(symbols, len(symbols))
     if symbol_last:
         symbols = symbols[symbol_last:]
     if symbol_length:
         symbols = symbols[:symbol_length]
-    if symbol_random:
-        symbols = random.sample(symbols, len(symbols))
+
     logger.info(str(len(symbols)) + ':' + str(symbols))
     return symbols
 
@@ -675,15 +679,16 @@ def c_in_no_double_ordering(open_order_history, symbol, longshort, tf, fc, w):
 
 
 def c_real_condition_by_fractal_index(df, fcnt, w, idx):  # real condititon by fractal index
+    notreal = True
     try:
-        real_condititon1 = True if (fcnt/2 < (w.idx_end - w.idx_start)) and w.idx_start == idx else False
-        real_condititon2 = True if df.iloc[idx + int(fcnt/2), 0] < (w.dates[-1]) else False
+        real_condititon1 = True if ((2*fcnt + 1)/2 > (w.idx_end - w.idx_start)) and w.idx_start == idx else False
+        real_condititon2 = True if df.iloc[idx + int(2*fcnt + 1)/2, 0] > (w.dates[-1]) else False
+        if not (real_condititon2 and real_condititon2):
+            return notreal
     except Exception as e:
-        print(e)
-    if not (real_condititon1 and real_condititon2):
-        if printout: print('real_condititon ')
-        return False
-    return True
+        logger.error('c_real_condition_by_fractal_index:%s' % str(e))
+        return notreal
+    return not notreal
 
 
 def c_active_no_empty(df, w):
@@ -709,8 +714,8 @@ def c_active_next_bean_ok(df, open_order_history, symbol, longshort, w):
 def c_active_in_time(df, w):
     df_active = df.loc[df['Date'] > w.dates[-1]]  # 2023.3.13 after liqu  # df[w.idx_end + 1:]
     w_idx_width = w.idx_end - w.idx_start
-    i = df_active.size
-    c_beyond_idx_width = True if (i / w_idx_width >= c_time_beyond_rate) else False
+    s = df_active.size
+    c_beyond_idx_width = True if (s / w_idx_width >= c_time_beyond_rate) else False
     if c_beyond_idx_width and c_time_beyond_flg:
         return False
     return True
@@ -783,12 +788,12 @@ def c_in_no_risk(symbol, longshort, w, trade_info, qtyrate):
     if c_risk_beyond_flg:
         pnl_percent_sl = (abs(et_price - sl_price) / et_price) * qtyrate_k
         if pnl_percent_sl >= c_risk_beyond_max:  # decrease max sl rate   0.1 = 10%
-            # logger.info(symbol + ' _c_risk_beyond_max : ' + str(pnl_percent_sl))
+            logger.info(symbol + ' _c_risk_beyond_max : ' + str(pnl_percent_sl))
             return False
 
         pnl_percent_tp = (abs(tp_price - et_price) / et_price) * qtyrate_k
         if pnl_percent_tp <= c_risk_beyond_min:  # reduce low tp rate  0.005 = 0.5%
-            # logger.info(symbol + ' _c_risk_beyond_min : ' + str(pnl_percent_tp))
+            logger.info(symbol + ' _c_risk_beyond_min : ' + str(pnl_percent_tp))
             return False
 
     if et_price == sl_price:
@@ -798,6 +803,8 @@ def c_in_no_risk(symbol, longshort, w, trade_info, qtyrate):
 
 
 def check_cons_for_new_etsl_order(open_order_history, df, symbol, tf, fc, longshort, w, idx, trade_info, qtyrate):
+    if not c_in_no_double_ordering(open_order_history, symbol, longshort, tf, fc, w):
+        return False
     if not c_plrate_adaptive(open_order_history, symbol, longshort, w):
         return False
     if not c_real_condition_by_fractal_index(df, fc, w, idx):
@@ -806,16 +813,15 @@ def check_cons_for_new_etsl_order(open_order_history, df, symbol, tf, fc, longsh
         return False
     if not c_active_next_bean_ok(df, open_order_history, symbol, longshort, w):
         return False
-    if not c_active_in_zone(df, open_order_history, symbol, longshort, w):
+    if not c_in_no_risk(symbol, longshort, w, trade_info, qtyrate):
         return False
     if not c_active_in_time(df, w):
         return False
-    if not c_currentprice_in_zone(symbol, longshort, w):
-        return False
-    if not c_in_no_risk(symbol, longshort, w, trade_info, qtyrate):
-        return False
-    if not c_in_no_double_ordering(open_order_history, symbol, longshort, tf, fc, w):
-        return False
+    if run_mode:
+        if not c_active_in_zone(df, open_order_history, symbol, longshort, w):
+            return False
+        if not c_currentprice_in_zone(symbol, longshort, w):
+            return False
     return True
 
 
@@ -923,12 +929,42 @@ def c_check_valid_wave_in_history(open_order_history, symbol, tf, fc, wavepatter
 #     return True
 
 
+def c_compare_before_fractal(df_lows, condi_compare_before_fractal, condi_compare_before_fractal_shift):
+    if condi_compare_before_fractal:
+        if not df_lows.empty:
+            for i in range(condi_compare_before_fractal_shift, 0, -1):
+                try:
+                    if condi_compare_before_fractal_strait:
+                        i = condi_compare_before_fractal_shift
+                    df_lows['Low_before'] = df_lows.Low.shift(i).fillna(0)
+                    if condi_compare_before_fractal_mode == 1:
+                        df_lows['compare_flg'] = df_lows.apply(lambda x: 1 if x['Low'] > x['Low_before'] else 0, axis=1)
+                    elif condi_compare_before_fractal_mode == 2:
+                        df_lows['compare_flg'] = df_lows.apply(
+                            lambda x: 1 if x['Low'] >= x['Low_before'] else 0, axis=1)
+                    elif condi_compare_before_fractal_mode == 3:
+                        df_lows['compare_flg'] = df_lows.apply(lambda x: 1 if x['Low'] < x['Low_before'] else 0, axis=1)
+                    elif condi_compare_before_fractal_mode == 4:
+                        df_lows['compare_flg'] = df_lows.apply(
+                            lambda x: 1 if x['Low'] <= x['Low_before'] else 0, axis=1)
+                    elif condi_compare_before_fractal_mode == 5:
+                        df_lows['compare_flg'] = df_lows.apply(
+                            lambda x: 1 if x['Low'] == x['Low_before'] else 0, axis=1)
+                    df_lows = df_lows.drop(df_lows[df_lows['compare_flg'] == 0].index)
+
+                    if not df_lows.empty:
+                        del df_lows['Low_before']
+                        del df_lows['compare_flg']
+                        pass
+                except:
+                    pass
+    return df_lows
+
+
 def moniwave_and_action(symbol, tf, trade_info):
-    timeunit = 'm'
-    bin_size = str(tf) + timeunit
     delta = (4 * fcnt[-1] + 1)
     df = get_fetch_dohlcv(symbol,
-                        interval=bin_size,
+                        interval=tf,
                         limit=delta)
     if df is not None:
         if df.empty:
@@ -953,39 +989,7 @@ def moniwave_and_action(symbol, tf, trade_info):
         if 'long' in type:
             df_lows = fractals_low_loopA(df_all, fcnt=fc, loop_count=loop_count)
             df_lows_plot = df_lows[['Date', 'Low']]
-
-            if condi_compare_before_fractal:
-                if not df_lows.empty:
-                    for i in range(condi_compare_before_fractal_shift, 0, -1):
-                        try:
-                            if condi_compare_before_fractal_strait:
-                                i = condi_compare_before_fractal_shift
-                            df_lows['Low_before'] = df_lows.Low.shift(i).fillna(0)
-                            if condi_compare_before_fractal_mode == 1:
-                                df_lows['compare_flg'] = df_lows.apply(lambda x: 1 if x['Low'] > x['Low_before'] else 0,
-                                                                       axis=1)
-                            elif condi_compare_before_fractal_mode == 2:
-                                df_lows['compare_flg'] = df_lows.apply(
-                                    lambda x: 1 if x['Low'] >= x['Low_before'] else 0, axis=1)
-                            elif condi_compare_before_fractal_mode == 3:
-                                df_lows['compare_flg'] = df_lows.apply(lambda x: 1 if x['Low'] < x['Low_before'] else 0,
-                                                                       axis=1)
-                            elif condi_compare_before_fractal_mode == 4:
-                                df_lows['compare_flg'] = df_lows.apply(
-                                    lambda x: 1 if x['Low'] <= x['Low_before'] else 0, axis=1)
-                            elif condi_compare_before_fractal_mode == 5:
-                                df_lows['compare_flg'] = df_lows.apply(
-                                    lambda x: 1 if x['Low'] == x['Low_before'] else 0, axis=1)
-                            df_lows = df_lows.drop(df_lows[df_lows['compare_flg'] == 0].index)
-
-                            if not df_lows.empty:
-                                del df_lows['Low_before']
-                                del df_lows['compare_flg']
-                                pass
-                        except:
-                            pass
-
-
+            df_lows = c_compare_before_fractal(df_lows, condi_compare_before_fractal, condi_compare_before_fractal_shift)
             impulse = Impulse('impulse')
             lows_idxs = df_lows.index.tolist()
             idxs = lows_idxs
@@ -993,36 +997,7 @@ def moniwave_and_action(symbol, tf, trade_info):
         if 'short' in type:
             df_highs = fractals_high_loopA(df_all, fcnt=fc, loop_count=loop_count)
             df_highs_plot = df_highs[['Date', 'High']]
-
-            if condi_compare_before_fractal:
-                if not df_highs.empty:
-                    for i in range(condi_compare_before_fractal_shift, 0, -1):
-                        try:
-                            df_highs['High_before'] = df_highs.High.shift(i).fillna(10000000000)
-                            if condi_compare_before_fractal_mode == 1:
-                                df_highs['compare_flg'] = df_highs.apply(
-                                    lambda x: 1 if x['High'] < x['High_before'] else 0, axis=1)
-                            elif condi_compare_before_fractal_mode == 2:
-                                df_highs['compare_flg'] = df_highs.apply(
-                                    lambda x: 1 if x['High'] <= x['High_before'] else 0, axis=1)
-                            elif condi_compare_before_fractal_mode == 3:
-                                df_highs['compare_flg'] = df_highs.apply(
-                                    lambda x: 1 if x['High'] > x['High_before'] else 0, axis=1)
-                            elif condi_compare_before_fractal_mode == 4:
-                                df_highs['compare_flg'] = df_highs.apply(
-                                    lambda x: 1 if x['High'] >= x['High_before'] else 0, axis=1)
-                            elif condi_compare_before_fractal_mode == 5:
-                                df_highs['compare_flg'] = df_highs.apply(
-                                    lambda x: 1 if x['High'] == x['High_before'] else 0, axis=1)
-                            df_highs = df_highs.drop(df_highs[df_highs['compare_flg'] == 0].index)
-
-                            if not df_highs.empty:
-                                del df_lows['High_before']
-                                del df_lows['compare_flg']
-                                pass
-                        except:
-                            pass
-
+            df_lows = c_compare_before_fractal(df_lows, condi_compare_before_fractal, condi_compare_before_fractal_shift)
             downimpulse = DownImpulse('downimpulse')
             highs_idxs = df_highs.index.tolist()
             idxs = highs_idxs
@@ -1030,14 +1005,14 @@ def moniwave_and_action(symbol, tf, trade_info):
         rules_to_check = list()
 
         if ('long' in type) and ('short' in type): idxs = sorted(list(set(lows_idxs) | set(highs_idxs)))
-        for i in idxs:
+        for ix in idxs:
             for wave_opt in wave_options.options_sorted:
-                if i in lows_idxs:
-                    waves = wa.find_impulsive_wave(idx_start=i, wave_config=wave_opt.values)
+                if ix in lows_idxs:
+                    waves = wa.find_impulsive_wave(idx_start=ix, wave_config=wave_opt.values)
                     longshort = True
                     rules_to_check = [impulse]
-                elif i in highs_idxs:
-                    waves = wa.find_downimpulsive_wave(idx_start=i, wave_config=wave_opt.values)
+                elif ix in highs_idxs:
+                    waves = wa.find_downimpulsive_wave(idx_start=ix, wave_config=wave_opt.values)
                     longshort = False
                     rules_to_check = [downimpulse]
 
@@ -1047,7 +1022,7 @@ def moniwave_and_action(symbol, tf, trade_info):
                         for rule in rules_to_check:
                             if wavepattern.check_rule(rule):
                                 if c_check_valid_wave_in_history(open_order_history, symbol, tf, fc, wavepattern):
-                                    if check_cons_for_new_etsl_order(open_order_history, df_all, symbol, tf, fc, longshort, wavepattern, i, trade_info, qtyrate):
+                                    if check_cons_for_new_etsl_order(open_order_history, df_all, symbol, tf, fc, longshort, wavepattern, ix, trade_info, qtyrate):
                                         available, quantity = c_balance_and_calc_quanty(symbol)
                                         if available:
                                             et_price, sl_price, tp_price, tp_price_w5 = get_trade_prices(open_order_history, symbol, longshort, wavepattern)
@@ -1756,7 +1731,6 @@ if __name__ == '__main__':
     start = time.perf_counter()
     cancel_all_closes()
     symbols = get_symbols()
-    i = 1
     logger.info('PID:' + str(os.getpid()))
     logger.info('seq:' + seq)
 
@@ -1769,7 +1743,7 @@ if __name__ == '__main__':
     wavepattern_history = []
     trade_info = [stats_history, order_history, asset_history, trade_count, fee_history, pnl_history,
                   wavepattern_history]
-
+    i = 1
     while True:
         # if i % 10 == 1:
         logger.info(f'{i} start: {time.strftime("%H:%M:%S")}')
