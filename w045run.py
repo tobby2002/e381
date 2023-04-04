@@ -24,7 +24,7 @@ import logging
 import time
 
 
-with open('eLab/w045config.json', 'r') as f:
+with open('w045config.json', 'r') as f:
     config = json.load(f)
 
 version = config['default']['version']
@@ -682,8 +682,8 @@ def c_real_condition_by_fractal_index(df, fcnt, w, idx):  # real condititon by f
     notreal = True
     try:
         real_condititon1 = True if ((2*fcnt + 1)/2 > (w.idx_end - w.idx_start)) and w.idx_start == idx else False
-        real_condititon2 = True if df.iloc[idx + int(2*fcnt + 1)/2, 0] > (w.dates[-1]) else False
-        if not (real_condititon2 and real_condititon2):
+        real_condititon2 = True if df.iloc[idx + int((2*fcnt + 1)/2), 0] > (w.dates[-1]) else False
+        if not (real_condititon1 and real_condititon2):
             return notreal
     except Exception as e:
         logger.error('c_real_condition_by_fractal_index:%s' % str(e))
@@ -807,8 +807,8 @@ def check_cons_for_new_etsl_order(open_order_history, df, symbol, tf, fc, longsh
         return False
     if not c_plrate_adaptive(open_order_history, symbol, longshort, w):
         return False
-    if not c_real_condition_by_fractal_index(df, fc, w, idx):
-        return False
+    # if not c_real_condition_by_fractal_index(df, fc, w, idx):
+    #     return False
     if not c_active_no_empty(df, w):
         return False
     if not c_active_next_bean_ok(df, open_order_history, symbol, longshort, w):
