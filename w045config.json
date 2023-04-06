@@ -36,7 +36,7 @@
 
     "_fractal_count": ["/21, 31, 51, 71  fibo:8, 13, /21, 34, 55, 89  ichimoku 9, /17, 26, 37, 43, 52 "],
     "_fcnt": [17, 26, 37],
-    "fcnt": [26, 52],
+    "fcnt": [17, 34, 52],
     "loop_count": 1,
     "up_to_count": 3,
     "condi_same_date": true,
@@ -56,7 +56,7 @@
     "condi_plrate_rate": 0.30,
     "condi_plrate_rate_min": 0.0,
 
-    "et_zone_rate": 0.5,
+    "et_zone_rate": 0.7,
 
     "_fee": "bybit_usdt_perp: -0.00025  0.0006    binance_futures: 0.0002    0.0004             0.01 --> 1%, 0.001 --> 0.1%, 0.0001 -> 0.01%   fee_taker:0.0004 시장가, fee_maker: 0.0002 지정가",
     "fee": 0.0000,
