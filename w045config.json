@@ -53,7 +53,7 @@
     "krate_min": 0.20,
 
     "condi_plrate_adaptive": true,
-    "condi_plrate_rate": 0.33,
+    "condi_plrate_rate": 0.30,
     "condi_plrate_rate_min": 0.0,
 
     "et_zone_rate": 0.7,
