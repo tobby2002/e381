@@ -221,6 +221,146 @@ def plot_pattern_m(df: pd.DataFrame, wave_pattern: WavePattern, wave_options=Non
     #     dcc.Graph(figure=fig)
     # ])
 
+
+def plot_pattern_n(df: pd.DataFrame, wave_pattern: WavePattern, wave_options=None, plot_list=None, df_lows_plot=None, df_highs_plot=None,trade_info=None, order_history=None, title: str = ''):
+    data = go.Ohlc(x=df['Date'],
+                   open=df['Open'],
+                   high=df['High'],
+                   low=df['Low'],
+                   close=df['Close'])
+
+    pattern_l = list()
+    pattern_l.append(data)
+
+    # trade_stats = [len(trade_count), winrate, symbol, asset_new, str(round(pnl_percent, 4)) + '%', sum(pnl_history), sum(fee_history)]
+    # order_history = [condi_order_i, position_enter_i, position_pf_i, position_sl_i]
+    # h = [trade_stats, order_history, asset_history, trade_count, fee_history, pnl_history, wavepattern]
+    if plot_list:
+        try:
+            for i in plot_list:
+                pattern_l.append(go.Scatter(x=df.Date, y=i, line=dict(color='grey', width=1)))
+        except:
+            pass
+
+    if trade_info:
+        order_history = trade_info[1]
+        if len(order_history) > 0 and order_history[-1]:
+            h = order_history[-1] # ['LINKUSDT', 7.386, 7.497, 7.36, '2023-04-05 22:54:00', '2023-04-05 23:03:00', False, 'WIN']
+            symbol = h[0]
+            longshort = h[-2]
+            winlose = h[-1]
+            et = h[1]
+            sl = h[2]
+            tp = h[3]
+            enter_dt = h[4]
+            out_dt = h[5]
+        # for h in order_history:
+            xdata = list()
+            ydata = list()
+            zlabels = list()
+
+            if h:
+                lnst = 'long' if longshort else 'short'
+                pfsl = 'PF' if winlose == 'WIN' else 'SL'
+                color_t = 'red' if winlose == 'WIN' else 'blue'
+                if enter_dt:
+                    xdata.append(enter_dt)
+                    ydata.append(et)
+                    zlabels.append('→ e %s %s' % (str(lnst), pfsl))
+                if out_dt:
+                    xdata.append(out_dt)
+                    ydata.append(tp if winlose == 'WIN' else sl)
+                    zlabels.append('← x')
+
+                t = go.Scatter(x=xdata,
+                               y=ydata,
+                               text=zlabels,
+                               mode='lines+markers+text',
+                               textposition='middle right',
+                               textfont=dict(size=12, color=color_t),
+                               line=dict(
+                                   color=color_t,
+                                   width=2),
+                               )
+                pattern_l.append(t)
+
+    if wave_pattern:
+        for wp in wave_pattern:
+            p = go.Scatter(x=wp[3].dates,
+                                   y=wp[3].values,
+                                   text=wp[3].labels,
+                                   mode='lines+markers+text',
+                                   textposition='middle right',
+                                   textfont=dict(size=11, color='#2c3035'),
+                                   line=dict(
+                                       color=('rgb(111, 126, 130)'),
+                                       width=1),
+                                   )
+            pattern_l.append(p)
+
+    if wave_options:
+        for wo in wave_options:
+            o = go.Scatter(
+                            x=wo[0],
+                            y=wo[1],
+                            text='  '+str(wo[2]),
+                            mode='lines+markers+text',
+                            textposition='middle right',
+                            textfont=dict(size=10, color='blue'),
+                            line=dict(
+                               color=('rgb(0, 149, 59)'),
+                               width=2),
+                                   )
+            pattern_l.append(o)
+
+    if df_lows_plot is not None:
+        p = go.Scatter(x=df_lows_plot.Date.tolist(),
+                          y=df_lows_plot.Low.tolist(),
+                           text=df_lows_plot.index.tolist(),
+
+                       mode='lines+markers+text',
+                               textposition='middle right',
+                               textfont=dict(size=8, color='red'),
+                               line=dict(
+                                   color=('rgb(0, 149, 59)'),
+                                   width=1),
+                               )
+        pattern_l.append(p)
+
+    if df_highs_plot is not None:
+        p = go.Scatter(x=df_highs_plot.Date.tolist(),
+                          y=df_highs_plot.High.tolist(),
+                           text=df_highs_plot.index.tolist(),
+                       mode='lines+markers+text',
+                               textposition='middle right',
+                               textfont=dict(size=8, color='red'),
+                               line=dict(
+                                   color=('rgb(0, 149, 59)'),
+                                   width=1),
+                               )
+        pattern_l.append(p)
+
+
+    layout = dict(
+            title=title,
+            font = dict(
+                family="Arial",
+                size=10,
+                color='#000000'
+            ))
+    fig = go.Figure(data=pattern_l, layout=layout)
+    fig.update(layout_xaxis_rangeslider_visible=False)
+    fig.show()
+
+    # import dash
+    # from dash import dcc
+    # from dash import html
+    #
+    # app = dash.Dash()
+    # app.layout = html.Div([
+    #     dcc.Graph(figure=fig)
+    # ])
+
 def plot_monowave(df, monowave, title: str = ''):
     data = go.Ohlc(x=df['Date'],
                    open=df['Open'],
