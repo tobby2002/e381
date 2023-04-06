@@ -1103,7 +1103,7 @@ def add_tp_history(open_order_history, symbol, et_orderId, tp_orderId, tp_data):
         history_id['tp_data'] = tp_data
         open_order_history[history_idx] = history_id  # replace history
         logger.info(symbol + ' _HS add_tp_history %s:' % str(tp_data))
-        # dump_history_pkl()
+        dump_history_pkl()
 
 
 def update_history_status(open_order_history, symbol, h_id, new_status):
@@ -1113,7 +1113,7 @@ def update_history_status(open_order_history, symbol, h_id, new_status):
         history_id['update_datetime'] = dt.datetime.now()
         open_order_history[history_idx] = history_id  # replace history
         logger.info(symbol + ' _HS update_history_status id: %s status: %s:' % (str(h_id), new_status))
-        # dump_history_pkl()
+        dump_history_pkl()
 
 
 def delete_history_status(open_order_history, symbol, h_id, event):
@@ -1121,7 +1121,7 @@ def delete_history_status(open_order_history, symbol, h_id, event):
         history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
         open_order_history.pop(history_idx)
         # logger.info(symbol + ' _HS delete_history_status %s' % event)
-        # dump_history_pkl()
+        dump_history_pkl()
 
 
 def close_position_by_symbol(symbol, quantity, longshort, et_orderId):
