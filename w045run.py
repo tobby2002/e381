@@ -3,7 +3,7 @@ from models.WavePattern import WavePattern
 from models.WaveRules import Impulse, DownImpulse
 from models.WaveAnalyzer import WaveAnalyzer
 from models.WaveOptions import WaveOptionsGenerator5
-from models.helpers import plot_pattern_m
+from models.helpers import plot_pattern_m, plot_pattern_n
 import datetime as dt
 import pandas as pd
 import numpy as np
@@ -581,6 +581,9 @@ def new_et_order(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price, tp_pr
             add_etsl_history(open_order_history, symbol, tf, fc, longshort, qtyrate_k, wavepattern, et_price,
                             sl_price, tp_price, tp_price_w5, quantity, order_et['orderId'], order_sl['orderId'], order_et,
                             order_sl)
+            current_price = float(api_call('ticker_price', [symbol])['price'])
+            # if current_price <= et_price if longshort else current_price >= et_price:
+            get_open_order_history_etsl_and_new_tp_order(open_order_history, symbol)
             return True
         else:
             r3 = api_call('cancel_batch_order', [symbol, [order_et['orderId']], []])
@@ -711,14 +714,14 @@ def c_active_next_bean_ok(df, open_order_history, symbol, longshort, w):
     return True
 
 
-def c_active_in_time(df, w):
-    df_active = df.loc[df['Date'] > w.dates[-1]]  # 2023.3.13 after liqu  # df[w.idx_end + 1:]
-    w_idx_width = w.idx_end - w.idx_start
-    s = df_active.size
-    c_beyond_idx_width = True if (s / w_idx_width >= c_time_beyond_rate) else False
-    if c_beyond_idx_width and c_time_beyond_flg:
-        return False
-    return True
+# def c_active_in_time(df, w):
+#     df_active = df.loc[df['Date'] > w.dates[-1]]  # 2023.3.13 after liqu  # df[w.idx_end + 1:]
+#     w_idx_width = w.idx_end - w.idx_start
+#     s = df_active.size
+#     c_beyond_idx_width = True if (s / w_idx_width >= c_time_beyond_rate) else False
+#     if c_beyond_idx_width and c_time_beyond_flg:
+#         return False
+#     return True
 
 
 def c_currentprice_in_zone(symbol, longshort, w):
@@ -734,9 +737,13 @@ def c_currentprice_in_zone(symbol, longshort, w):
     sl_price = w0
     between_entry_target = et_price + abs(tp_price - et_price)*(et_zone_rate) if longshort else et_price - abs(tp_price - et_price)*(et_zone_rate)
     current_price = float(api_call('ticker_price', [symbol])['price'])
-    c_current_price_in_zone = (current_price > et_price and current_price < between_entry_target) \
+    # c_current_price_in_zone = (current_price > et_price and current_price < between_entry_target) \
+    #                         if longshort else \
+    #                         (current_price < et_price and current_price > between_entry_target)
+
+    c_current_price_in_zone = (current_price > sl_price and current_price < between_entry_target) \
                             if longshort else \
-                            (current_price < et_price and current_price > between_entry_target)
+                            (current_price < sl_price and current_price > between_entry_target)
 
     if not c_current_price_in_zone:
         return False
@@ -766,15 +773,18 @@ def c_active_in_zone(df, open_order_history, symbol, longshort, w):
 
     if not df_active.empty:
         try:
-            active_max_value = max(df_active.High.tolist(), default=tp_price)
-            active_min_value = min(df_active.Low.tolist(), default=tp_price)
+            active_max_value = max(df_active.High.tolist(), default=tp_price_w5)
+            active_min_value = min(df_active.Low.tolist(), default=tp_price_w5)
         except Exception as e:
             logger.error('active_max_value:' + str(e))
 
-        c_active_min_max_in_zone = (active_min_value > et_price and active_max_value < (w_end_price + o_fibo_value)) \
-                                if longshort else \
-                            (active_max_value < et_price and active_min_value > (w_end_price - o_fibo_value))
+        # c_active_min_max_in_zone = (active_min_value > et_price and active_max_value < (w_end_price + o_fibo_value)) \
+        #                         if longshort else \
+        #                     (active_max_value < et_price and active_min_value > (w_end_price - o_fibo_value))
 
+        c_active_min_max_in_zone = (active_min_value > sl_price and active_max_value < (tp_price_w5 + o_fibo_value)) \
+                                if longshort else \
+                            (active_max_value < sl_price and active_min_value > (tp_price_w5 - o_fibo_value))
         if not c_active_min_max_in_zone:
             return False
     return True
@@ -788,12 +798,12 @@ def c_in_no_risk(symbol, longshort, w, trade_info, qtyrate):
     if c_risk_beyond_flg:
         pnl_percent_sl = (abs(et_price - sl_price) / et_price) * qtyrate_k
         if pnl_percent_sl >= c_risk_beyond_max:  # decrease max sl rate   0.1 = 10%
-            # logger.info(symbol + ' _c_risk_beyond_max : ' + str(pnl_percent_sl))
+            logger.info(symbol + ' _c_risk_beyond_max : ' + str(pnl_percent_sl))
             return False
 
         pnl_percent_tp = (abs(tp_price - et_price) / et_price) * qtyrate_k
         if pnl_percent_tp <= c_risk_beyond_min:  # reduce low tp rate  0.005 = 0.5%
-            # logger.info(symbol + ' _c_risk_beyond_min : ' + str(pnl_percent_tp))
+            logger.info(symbol + ' _c_risk_beyond_min : ' + str(pnl_percent_tp))
             return False
 
     if et_price == sl_price:
@@ -811,12 +821,12 @@ def check_cons_for_new_etsl_order(open_order_history, df, symbol, tf, fc, longsh
     #     return False
     if not c_active_no_empty(df, w):
         return False
-    if not c_active_next_bean_ok(df, open_order_history, symbol, longshort, w):
-        return False
+    # if not c_active_next_bean_ok(df, open_order_history, symbol, longshort, w):
+    #     return False
     if not c_in_no_risk(symbol, longshort, w, trade_info, qtyrate):
         return False
-    if not c_active_in_time(df, w):
-        return False
+    # if not c_active_in_time(df, w):
+    #     return False
     if run_mode:
         if not c_active_in_zone(df, open_order_history, symbol, longshort, w):
             return False
@@ -1039,7 +1049,7 @@ def moniwave_and_action(symbol, tf, trade_info):
                                                 r = new_et_order(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price, tp_price, tp_price_w5, quantity, wavepattern)
                                                 if r:
                                                     if plotview:
-                                                        plot_pattern_m(df=df,
+                                                        plot_pattern_n(df=df,
                                                                        wave_pattern=[[1, wavepattern.dates[0], id(wavepattern), wavepattern]],
                                                                        df_lows_plot=df_lows_plot, df_highs_plot=df_highs_plot,
                                                                        trade_info=None, title=str(symbol + ' %s ' % str('LONG' if longshort else 'SHORT') + '%sm %s' % (tf, fc) +', ET: ' + str(et_price)))
@@ -1080,7 +1090,7 @@ def add_etsl_history(open_order_history, symbol, tf, fc, longshort, qtyrate_k, w
     }
     open_order_history.append(history)
     logger.info(symbol + ' _HS add_etsl_history %s:' % 'ETSL' + str(history))
-    dump_history_pkl()
+    # dump_history_pkl()
 
 
 def add_tp_history(open_order_history, symbol, et_orderId, tp_orderId, tp_data):
@@ -1093,7 +1103,7 @@ def add_tp_history(open_order_history, symbol, et_orderId, tp_orderId, tp_data):
         history_id['tp_data'] = tp_data
         open_order_history[history_idx] = history_id  # replace history
         logger.info(symbol + ' _HS add_tp_history %s:' % str(tp_data))
-        dump_history_pkl()
+        # dump_history_pkl()
 
 
 def update_history_status(open_order_history, symbol, h_id, new_status):
@@ -1103,7 +1113,7 @@ def update_history_status(open_order_history, symbol, h_id, new_status):
         history_id['update_datetime'] = dt.datetime.now()
         open_order_history[history_idx] = history_id  # replace history
         logger.info(symbol + ' _HS update_history_status id: %s status: %s:' % (str(h_id), new_status))
-        dump_history_pkl()
+        # dump_history_pkl()
 
 
 def delete_history_status(open_order_history, symbol, h_id, event):
@@ -1111,7 +1121,7 @@ def delete_history_status(open_order_history, symbol, h_id, event):
         history_idx, history_id = get_i_r(open_order_history, 'id', h_id)
         open_order_history.pop(history_idx)
         # logger.info(symbol + ' _HS delete_history_status %s' % event)
-        dump_history_pkl()
+        # dump_history_pkl()
 
 
 def close_position_by_symbol(symbol, quantity, longshort, et_orderId):
@@ -1342,6 +1352,33 @@ def get_account_trades(symbol, et_orderId, sl_orderId, tp_orderId):
         print('get_account_trades:%s' % str(e))
         logger.error('get_account_trades:%s' % str(e))
     return df, pnl, commission
+
+
+def get_open_order_history_etsl_and_new_tp_order(open_order_history, symbol):
+    if open_order_history:
+        history_new = [x for x in open_order_history if (x['symbol'] == symbol and x['status'] == 'ETSL')]
+        if history_new:
+            for new in history_new:
+                et_orderId = new['et_orderId']
+                sl_orderId = new['sl_orderId']
+                et_price = new['et_price']
+                tp_price = new['tp_price']
+                tf = new['timeframe']
+                longshort = new['longshort']
+                quantity = new['quantity']
+                fc = new['fcnt']
+
+                r_get_open_orders_et = api_call('get_open_orders', [symbol, et_orderId])
+                r_get_open_orders_et_flg = True if r_get_open_orders_et else False
+                r_query_et = api_call('query_order', [symbol, et_orderId])
+
+                r_get_open_orders_sl = api_call('get_open_orders', [symbol, sl_orderId])
+                r_get_open_orders_sl_flg = True if r_get_open_orders_sl else False
+                r_query_sl = api_call('query_order', [symbol, sl_orderId])
+                if r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is True and r_query_et[
+                    'status'] == 'FILLED' and r_query_sl['status'] == 'NEW':
+                    # NEW_TP
+                    new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId)
 
 
 def monihistory_and_action(open_order_history, symbol, trade_info):  # ETSL -> CANCEL        or       TP -> WIN or LOSE
