@@ -705,7 +705,7 @@ def c_active_no_empty(df, w):  # 거의 영향을 안줌
     return True
 
 
-def c_active_next_bean_ok(df, open_order_history, symbol, longshort, w): ##### 절대 조건 안걸면 안됨, 2% 차이가 남
+def c_active_next_bean_ok(df, open_order_history, symbol, longshort, w): ##### 거래건수 차이가 많이 남 없으면, 많아짐
     et_price, sl_price, tp_price, tp_price_w5 = get_trade_prices(open_order_history, symbol, longshort, w)
     df_active_next = df[w.idx_end + 1: w.idx_end + 2]  # 웨이브가 끝나고 하나의 봉을 더 보고 그 다음부터 거래가 가능
     if not df_active_next.empty:
@@ -825,8 +825,8 @@ def check_cons_for_new_etsl_order(open_order_history, df, symbol, tf, fc, longsh
     #     return False
     if not c_active_no_empty(df, w):
         return False
-    if not c_active_next_bean_ok(df, open_order_history, symbol, longshort, w):
-        return False
+    # if not c_active_next_bean_ok(df, open_order_history, symbol, longshort, w):
+    #     return False
     if not c_in_no_risk(symbol, longshort, w, trade_info, qtyrate):
         return False
     # if not c_active_in_time(df, w):
