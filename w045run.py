@@ -283,6 +283,10 @@ def api_call(method, arglist, **kwargs):
             symbol = arglist[0]
             leverage = arglist[1]
             response = um_futures_client.change_leverage(symbol=symbol, leverage=leverage, recvWindow=6000)
+        elif method == 'change_margin_type':
+            symbol = arglist[0]
+            margin_type = arglist[1]
+            response = um_futures_client.change_margin_type(symbol=symbol, marginType=margin_type, recvWindow=6000)
         elif method == 'balance':
             response = um_futures_client.balance(recvWindow=6000)
         elif method == 'account':
@@ -694,14 +698,14 @@ def c_real_condition_by_fractal_index(df, fcnt, w, idx):  # real condititon by f
     return not notreal
 
 
-def c_active_no_empty(df, w):
+def c_active_no_empty(df, w):  # 거의 영향을 안줌
     df_active = df.loc[df['Date'] > w.dates[-1]]  # 2023.3.13 after liqu  # df[w.idx_end + 1:]
     if df_active.empty:
         return False
     return True
 
 
-def c_active_next_bean_ok(df, open_order_history, symbol, longshort, w):
+def c_active_next_bean_ok(df, open_order_history, symbol, longshort, w): ##### 절대 조건 안걸면 안됨, 2% 차이가 남
     et_price, sl_price, tp_price, tp_price_w5 = get_trade_prices(open_order_history, symbol, longshort, w)
     df_active_next = df[w.idx_end + 1: w.idx_end + 2]  # 웨이브가 끝나고 하나의 봉을 더 보고 그 다음부터 거래가 가능
     if not df_active_next.empty:
@@ -714,14 +718,14 @@ def c_active_next_bean_ok(df, open_order_history, symbol, longshort, w):
     return True
 
 
-# def c_active_in_time(df, w):
-#     df_active = df.loc[df['Date'] > w.dates[-1]]  # 2023.3.13 after liqu  # df[w.idx_end + 1:]
-#     w_idx_width = w.idx_end - w.idx_start
-#     s = df_active.size
-#     c_beyond_idx_width = True if (s / w_idx_width >= c_time_beyond_rate) else False
-#     if c_beyond_idx_width and c_time_beyond_flg:
-#         return False
-#     return True
+def c_active_in_time(df, w):
+    df_active = df.loc[df['Date'] > w.dates[-1]]  # 2023.3.13 after liqu  # df[w.idx_end + 1:]
+    w_idx_width = w.idx_end - w.idx_start
+    s = df_active.size
+    c_beyond_idx_width = True if (s / w_idx_width >= c_time_beyond_rate) else False
+    if c_beyond_idx_width and c_time_beyond_flg:
+        return False
+    return True
 
 
 def c_currentprice_in_zone(symbol, longshort, w):
@@ -798,12 +802,12 @@ def c_in_no_risk(symbol, longshort, w, trade_info, qtyrate):
     if c_risk_beyond_flg:
         pnl_percent_sl = (abs(et_price - sl_price) / et_price) * qtyrate_k
         if pnl_percent_sl >= c_risk_beyond_max:  # decrease max sl rate   0.1 = 10%
-            logger.info(symbol + ' _c_risk_beyond_max : ' + str(pnl_percent_sl))
+            # logger.info(symbol + ' _c_risk_beyond_max : ' + str(pnl_percent_sl))
             return False
 
         pnl_percent_tp = (abs(tp_price - et_price) / et_price) * qtyrate_k
         if pnl_percent_tp <= c_risk_beyond_min:  # reduce low tp rate  0.005 = 0.5%
-            logger.info(symbol + ' _c_risk_beyond_min : ' + str(pnl_percent_tp))
+            # logger.info(symbol + ' _c_risk_beyond_min : ' + str(pnl_percent_tp))
             return False
 
     if et_price == sl_price:
@@ -821,8 +825,8 @@ def check_cons_for_new_etsl_order(open_order_history, df, symbol, tf, fc, longsh
     #     return False
     if not c_active_no_empty(df, w):
         return False
-    # if not c_active_next_bean_ok(df, open_order_history, symbol, longshort, w):
-    #     return False
+    if not c_active_next_bean_ok(df, open_order_history, symbol, longshort, w):
+        return False
     if not c_in_no_risk(symbol, longshort, w, trade_info, qtyrate):
         return False
     # if not c_active_in_time(df, w):
@@ -1602,16 +1606,22 @@ def single(symbols, i, trade_info, *args):
                 print('moniwave_and_action: %s' % str(e))
 
 
-def set_maxleverage_allsymbol(symbols):
+def set_maxleverage_margintype_allsymbol(symbols):
     logger.info('set  set_maxleverage_allsymbol start')
     for symbol in symbols:
         try:
             r = api_call('leverage_brackets', [symbol])
-            max_leverage = r[0]['brackets'][0]['initialLeverage']
-            time.sleep(0.1)
-            rt = api_call('change_leverage', [symbol, max_leverage])
+            time.sleep(0.2)
+            logger.info(str(r))
 
-            logger.info(rt)
+            if r:
+                max_leverage = r[0]['brackets'][0]['initialLeverage']
+                if max_leverage:
+                    rt_c = api_call('change_leverage', [symbol, max_leverage])
+
+                margin_type = 'CROSSED'
+                rt_m = api_call('change_margin_type', [symbol, margin_type])
+                logger.info(str(rt_c) + str(rt_m))
         except ClientError as error:
             logger.error(
                 "Found set_maxleverage_allsymbol error. status: {}, error code: {}, error message: {}".format(
@@ -1619,7 +1629,7 @@ def set_maxleverage_allsymbol(symbols):
                 )
             )
     time.sleep(2)
-    logger.info('set_maxleverage_allsymbol done')
+    logger.info('set_maxleverage_margintype_allsymbol done')
 
 
 def cancel_all_positions():
@@ -1764,7 +1774,7 @@ if __name__ == '__main__':
     message_bot_main(botfather_token)
 
     if reset_leverage:
-        set_maxleverage_allsymbol(symbols_binance_futures)
+        set_maxleverage_margintype_allsymbol(symbols_binance_futures)
     start = time.perf_counter()
     cancel_all_closes()
     symbols = get_symbols()
