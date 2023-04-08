@@ -825,7 +825,7 @@ def check_cons_for_new_etsl_order(open_order_history, df, symbol, tf, fc, longsh
     #     return False
     if not c_active_no_empty(df, w):
         return False
-    # if not c_active_next_bean_ok(df, open_order_history, symbol, longshort, w):
+    # if not c_active_next_bean_ok(df, open_order_history, symbol, longshort, w): # 미적용하는게 휠씬 이익이 극대화 된다.
     #     return False
     if not c_in_no_risk(symbol, longshort, w, trade_info, qtyrate):
         return False
