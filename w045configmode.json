@@ -83,14 +83,14 @@
     "stop_long": 0.005,
     "stop_short": 0.005,
 
-    "intersect_idx": false,
+    "intersect_idx": true,
     "plotview": true,
     "printout": false,
     "multi_process": true,
     "seed": 100,
     "init_running_trade": false,
     "reset_leverage": false,
-    "run_mode": "REAL"
+    "run_mode": "BACKTEST"
   },
   "basic": {
     "secret_key": "knwlJpZVdWLy20iRnHInxyRi2SXHknbj0tKTO9vJqi7NOno30fDO2y2zYNPyvYZq",
