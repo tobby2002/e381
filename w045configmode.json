@@ -90,7 +90,7 @@
     "seed": 100,
     "init_running_trade": false,
     "reset_leverage": false,
-    "run_mode": "BACKTEST"
+    "run_mode": "REAL"
   },
   "basic": {
     "secret_key": "knwlJpZVdWLy20iRnHInxyRi2SXHknbj0tKTO9vJqi7NOno30fDO2y2zYNPyvYZq",
