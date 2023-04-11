@@ -831,8 +831,11 @@ def check_cons_for_new_etsl_order(open_order_history, df, symbol, tf, fc, longsh
         return False
     # if not c_active_next_bean_ok(df, open_order_history, symbol, longshort, w): # 미적용하는게 휠씬 이익이 극대화 된다.
     #     return False
-    if not c_in_no_risk(symbol, longshort, w, trade_info, qtyrate):
-        return False
+    try:
+        if not c_in_no_risk(symbol, longshort, w, trade_info, qtyrate):
+            return False
+    except Exception as e:
+        print(str(e))
     # if not c_active_in_time(df, w):
     #     return False
     if run_mode:
@@ -972,15 +975,26 @@ def c_compare_before_fractal(df_lows, condi_compare_before_fractal, condi_compar
     return df_lows
 
 
-def c_allowd_intersect(i, longshort, trends, detrends, line_price, cross_cnt=1):
+def c_allowed_intersect(i, longshort, trends, detrends, line_price, cross_cnt=1):
     if intersect_idx:
-        baseline = np.array(trends[0:i + 1]) if longshort else np.array(detrends[0:i + 1])
+        baseline = np.array(detrends[0:i + 1]) if longshort else np.array(trends[0:i + 1])
         entryline = np.array([line_price for i in range(i + 1)])
         intersect_indexes = np.argwhere(np.diff(np.sign(baseline - entryline))).flatten()
         if intersect_indexes.size >= cross_cnt:
-            print('intersect_indexes out :%s' % intersect_indexes)
+            # print('intersect_indexes out :%s' % intersect_indexes)
             return False
     return True
+
+
+def c_allowed_intersect_df(symbol, df, w, line_price, cross_cnt):
+    if intersect_idx:
+        df_active = df[w.idx_end:]  # w5 stick 포함
+        df_active['cross'] = df_active.apply(lambda x: 1 if x['High'] >= line_price and line_price >= x['Low'] else 0, axis=1)
+        cross_count = df_active['cross'].sum(axis=0)
+        if cross_count > cross_cnt:
+            print('intersect_indexes out : %s : %s' % (symbol, cross_count))
+            return False, cross_count
+    return True, cross_count
 
 
 def synchronized(wrapped):
@@ -1060,7 +1074,7 @@ def get_historical_ohlc_data_start_end(symbol, start_int, end_int, past_days=Non
 
 def backtest_trade45(tf, df, symbol, fcnt, longshort, df_lows_plot, df_highs_plot, wavepattern, trade_info, ix, wavepattern_l, wavepattern_tpsl_l, wave_option_plot_l):
     w = wavepattern
-    #
+
     # if not c_real_condition_by_fractal_index(df, fcnt, w, ix):
     #     return trade_info, False
 
@@ -1154,16 +1168,9 @@ def backtest_trade45(tf, df, symbol, fcnt, longshort, df_lows_plot, df_highs_plo
                 if printout:  logger.info('c_out_trend_beyond ', i, close)
                 return trade_info, False
 
-            if not c_allowd_intersect(i, longshort, trends, detrends, et_price, cross_cnt=2):  # 2번 이상 크로스시 거래대상 제외
-                # plot_pattern(df=df[:w.idx_end + i + 2], wave_pattern=w, title=symbol)
-                #
-                # plot_pattern_n(df=df, wave_pattern=[ix, wavepattern.dates[0], id(wavepattern), wavepattern],
-                #                df_lows_plot=df_lows_plot,
-                #                df_highs_plot=df_highs_plot,
-                #                trade_info=trade_info,
-                #                wave_options=wave_option_plot_l,
-                #                title=symbol)
-                return trade_info, False
+            # c_interset, cross_cnt = c_allowed_intersect_df(symbol, df, wavepattern, et_price, 1)  # 1번 초과 크로스시 거래대상 제외
+            # if not c_interset:
+            #     return trade_info, False
 
             c_positioning = (position is False and detrends[i] <= et_price and detrends[i] > sl_price) if longshort else (position is False and detrends[i] >= et_price and detrends[i] < sl_price)
             c_profit = (position and trends[i] >= tp_price) if longshort else (position and trends[i] <= tp_price)
@@ -1469,6 +1476,17 @@ def moniwave_and_action(symbol, tf, trade_info,  i=None):
                                             available, quantity = c_balance_and_calc_quanty(symbol)
                                             if available:
                                                 et_price, sl_price, tp_price, tp_price_w5 = get_trade_prices(open_order_history, symbol, longshort, wavepattern)
+
+                                                c_interset, cross_cnt = c_allowed_intersect_df(symbol, df, wavepattern, et_price, 1)  # 1번 초과 크로스시 거래대상 제외
+                                                if not c_interset:
+                                                    return False
+                                                if cross_cnt == 1:
+                                                    # check current price
+                                                    current_price = float(api_call('ticker_price', [symbol])['price'])
+                                                    c_current_price_position = current_price < et_price if longshort else current_price > et_price
+                                                    if not c_current_price_position:
+                                                        return False
+
                                                 try:
                                                     qtyrate_k = get_qtyrate_k(trade_info, qtyrate)
                                                     r = new_et_order(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price, tp_price, tp_price_w5, quantity, wavepattern)
@@ -1478,7 +1496,7 @@ def moniwave_and_action(symbol, tf, trade_info,  i=None):
                                                                            wave_pattern=[[1, wavepattern.dates[0], id(wavepattern), wavepattern]],
                                                                            df_lows_plot=df_lows_plot, df_highs_plot=df_highs_plot,
                                                                            trade_info=None, title=str(symbol + ' %s ' % str('LONG' if longshort else 'SHORT') + '%sm %s' % (tf, fc) +', ET: ' + str(et_price)))
-
+                                                    pass
                                                 except Exception as e:
                                                     logger.error('new_et_order: %s' % str(e))
 
@@ -1589,7 +1607,7 @@ def update_history_status(open_order_history, symbol, h_id, new_status):
         history_id['status'] = new_status  # update new status
         history_id['update_datetime'] = dt.datetime.now()
         open_order_history[history_idx] = history_id  # replace history
-        logger.info(symbol + ' _HS update_history_status id: %s status: %s:' % (str(h_id), new_status))
+        # logger.info(symbol + ' _HS update_history_status id: %s status: %s:' % (str(h_id), new_status))
         dump_history_pkl()
 
 
@@ -2288,7 +2306,7 @@ if __name__ == '__main__':
         while True:
             # if i % 10 == 1:
             logger.info(f'{i} start: {time.strftime("%H:%M:%S")}')
-            single(symbols, i, trade_info)
+            single(symbols, trade_info, i)
             i += 1
     elif run_mode == 'BACKTEST':
         mdd = None
