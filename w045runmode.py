@@ -1200,15 +1200,14 @@ def monitor_wave_and_action(symbol, tf, r_mode, t_info, o_his, i=None):
                             return False
                     try:
                         qtyrate_k = get_qtyrate_k(t_info, qtyrate)
-                        r, o_his = new_et_order(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price, tp_price,
+                        r_order, o_his = new_et_order(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price, tp_price,
                                                     tp_price_w5, quantity, wavepattern, o_his)
-                        if r:
+                        if r_order:
                             if plotview:
                                 plot_pattern_n(df=df,
                                                wave_pattern=[[1, wavepattern.dates[0], id(wavepattern), wavepattern]],
                                                df_lows_plot=df_lows_plot, df_highs_plot=df_highs_plot,
-                                               trade_info=None, title=str(
-                                        symbol + ' %s ' % str('LONG' if longshort else 'SHORT') + '%sm %s' % (
+                                               trade_info=None, title=str(symbol + ' %s ' % str('LONG' if longshort else 'SHORT') + '%sm %s' % (
                                             tf, fc) + ', ET: ' + str(et_price)))
                         pass
                     except Exception as e:
@@ -1714,7 +1713,7 @@ def update_trade_info(t_info, c_profit, c_stoploss, o_his, symbol, h_id):
                     s_11 = symbol + '           '
                     trade_in = 'trade_in'  # trade_inout_i[0][0][2:-3]
                     trade_out = 'trade_out'  # trade_inout_i[1][0][8:-3]
-                    ll = '||||||||||| %s %s %s %s %s x%s %s-%s %s %s %s %s %s %s - %s' % (str(qtyrate_k), str(
+                    ll = 'OOOOOOO %s %s %s %s %s x%s %s-%s %s %s %s %s %s %s - %s' % (str(qtyrate_k), str(
                         c_compare_before_fractal_mode) + ' :shift=' + str(c_compare_before_fractal_shift),
                                                                                           timeframe, s_11[:11], tf,
                                                                                           qtyrate_k,
@@ -2041,22 +2040,24 @@ def get_symbols_in_order_position(o_his):
 def single(symbol_list, r_mode, t_info, o_his, *args):
     roof_cnt = 1
     for symbol in symbol_list:
+        for tf in timeframe:
+            try:
+                logger.info(f'{roof_cnt} in monitor_wave_and_action: {time.strftime("%H:%M:%S")}')
+                t_info, o_his = monitor_wave_and_action(symbol, tf, r_mode, t_info, o_his, i=1)
+            except Exception as e:
+                print('monitor_wave_and_action: %s' % str(e))
+                logger.error('monitor_wave_and_action: %s' % str(e))
+
         if r_mode == 'REAL':
             if roof_cnt % 20 == 0:
+                logger.info(f'{roof_cnt} in monitor_history_and_action: {time.strftime("%H:%M:%S")}')
                 try:
                     symbol_l = get_symbols_in_order_position(o_his)
                     for sym in symbol_l:
                         t_info, o_his = monitor_history_and_action(sym, r_mode, t_info, o_his)
                 except Exception as e:
-                    print('monihistory_and_action: %s' % str(e))
-                    logger.error('monihistory_and_action: %s' % str(e))
-
-        for tf in timeframe:
-            try:
-                t_info, o_his = monitor_wave_and_action(symbol, tf, r_mode, t_info, o_his, i=1)
-            except Exception as e:
-                print('moniwave_and_action: %s' % str(e))
-                logger.error('moniwave_and_action: %s' % str(e))
+                    print('monitor_history_and_action: %s' % str(e))
+                    logger.error('monitor_history_and_action: %s' % str(e))
         roof_cnt += 1
     return t_info, o_his
 
