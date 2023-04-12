@@ -1,7 +1,7 @@
 {
   "default": {
-    "version": "0.95",
-    "descrition": "045 REAL BACKTEST mode version",
+    "version": "0.97",
+    "descrition": "045 mode version",
     "_exchange": "bybit_usdt_perp, binance_usdt_perp, binance_busd_perp binance_usdt_busd_perp",
     "exchange": "BINANCE",
     "exchange_symbol": "binance_usdt_perp",
@@ -39,22 +39,22 @@
     "fcnt": [17, 34, 52],
     "loop_count": 1,
     "up_to_count": 3,
-    "condi_same_date": true,
+    "c_same_date": true,
 
-    "condi_compare_before_fractal": false,
-    "condi_compare_before_fractal_strait": true,
-    "condi_compare_before_fractal_shift": 1,
-    "condi_compare_before_fractal_mode": 1,
+    "c_compare_before_fractal": false,
+    "c_compare_before_fractal_strait": true,
+    "c_compare_before_fractal_shift": 1,
+    "c_compare_before_fractal_mode": 1,
 
-    "condi_kelly_adaptive": true,
-    "condi_kelly_window": 20,
+    "c_kelly_adaptive": true,
+    "c_kelly_window": 20,
     "qtyrate": 0.30,
     "krate_max": 0.40,
     "krate_min": 0.20,
 
-    "condi_plrate_adaptive": true,
-    "condi_plrate_rate": 0.33,
-    "condi_plrate_rate_min": 0.0,
+    "c_plrate_adaptive": true,
+    "c_plrate_rate": 0.33,
+    "c_plrate_rate_min": 0.0,
 
     "et_zone_rate": 0.7,
 
