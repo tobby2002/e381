@@ -3,7 +3,7 @@ from models.WavePattern import WavePattern
 from models.WaveRules import Impulse, DownImpulse
 from models.WaveAnalyzer import WaveAnalyzer
 from models.WaveOptions import WaveOptionsGenerator5
-from models.helpers import plot_pattern_m, plot_pattern_n
+from models.helpers import plot_pattern_m, plot_pattern_n, plot_pattern_k
 import datetime as dt
 import pandas as pd
 import numpy as np
@@ -116,7 +116,8 @@ plotview = config['default']['plotview']
 printout = config['default']['printout']
 init_running_trade = config['default']['init_running_trade']
 reset_leverage = config['default']['reset_leverage']
-run_mode = config['default']['run_mode']
+trade_mode = config['default']['trade_mode']
+paper_flg = config['default']['paper_flg']
 
 seq = dt.datetime.now().strftime("%Y%m%d_%H%M%S") + str([timeframe, fcnt, period_days_ago, period_days_ago_till])
 # seq = '{date:%Y-%m-%d_%H:%M:%S}'.format(date=dt.datetime.now())
@@ -208,7 +209,8 @@ def print_condition():
     logger.info('printout: %s' % printout)
     logger.info('init_running_trade: %s' % init_running_trade)
     logger.info('reset_leverage: %s' % reset_leverage)
-    logger.info('run_mode: %s' % run_mode)
+    logger.info('trade_mode: %s' % trade_mode)
+    logger.info('paper_flg: %s' % paper_flg)
     logger.info('-------------------------------')
 
 
@@ -464,10 +466,12 @@ def set_price(symbol, price, longshort):
             return cost
 
 
-def set_price_for_tp(o_his, symbol, price, longshort):
+def set_price_for_tp(o_his, symbol, price, longshort, t_mode):
     try:
         if o_his:
-            symbol_order_history = [x for x in o_his if x['symbol'] == symbol and x['status'] == 'ETSL']
+            symbol_order_history = [x for x in o_his if x['symbol'] == symbol
+                                    and x['trade_mode'] == t_mode
+                                    and x['status'] == 'ETSL']
             symbol_order_history_last_10 = symbol_order_history
             if len(symbol_order_history) >= 10:
                 symbol_order_history_last_10 = symbol_order_history[-10:]
@@ -531,23 +535,28 @@ def get_i_r(li, key, value):
     return None, None
 
 
-def get_trade_prices(o_his, symbol, longshort, w):
+def get_wave_prices(symbol, longshort, w):
     w0 = w.values[0]
-    w1 = w.values[1]
-    w2 = w.values[3]
-    w3 = w.values[5]
+    # w1 = w.values[1]
+    # w2 = w.values[3]
+    # w3 = w.values[5]
     w4 = w.values[7]
     w5 = w.values[9]
 
     et_price = set_price(symbol, w4, longshort)
     sl_price = set_price(symbol, w0, longshort)
     tp_price_w5 = set_price(symbol, w5, longshort)
-    tp_price = set_price_for_tp(o_his, symbol, tp_price_w5, longshort)
+    return et_price, sl_price, tp_price_w5
+
+
+def get_trade_prices(o_his, symbol, longshort, w, t_mode):
+    et_price, sl_price, tp_price_w5 = get_wave_prices(symbol, longshort, w)
+    tp_price = set_price_for_tp(o_his, symbol, tp_price_w5, longshort, t_mode)
     return et_price, sl_price, tp_price, tp_price_w5
 
 
-def new_et_order(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price, tp_price, tp_price_w5, quantity, wavepattern, run_mode, o_his, et_orderId_p):
-    if run_mode == 'REAL':
+def new_et_order_real(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price, tp_price, tp_price_w5, quantity, wavepattern, o_his, t_mode):
+    try:
         params_et = [
             {
                 "symbol": symbol,
@@ -565,45 +574,49 @@ def new_et_order(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price, tp_pr
         if r1 is not None:
             try:
                 order_et = r1[0]
-                if order_et['code']:
-                    return False
-            except:
-                pass
+                if order_et['orderId']:
+                    params_sl = [
+                        {
+                            "symbol": symbol,
+                            "side": "SELL" if longshort else "BUY",
+                            "type": "STOP_MARKET",
+                            "positionSide": "LONG" if longshort else "SHORT",
+                            "quantity": str(quantity),
+                            "timeInForce": "GTC",
+                            "stopPrice": str(sl_price),
+                            "priceProtect": "TRUE",
+                            "closePosition": "TRUE",
+                            "workingType": "CONTRACT_PRICE",
+                            "newClientOrderId": "sl_" + str(tf) + '_' + str(fc) + '_' + str(order_et['orderId']),
+                        }
+                    ]
+                    r2 = api_call('new_batch_order', [params_sl])
+                    if r2:
+                        try:
+                            order_sl = r2[0]
+                            if order_sl['orderId']:
 
-            params_sl = [
-                {
-                    "symbol": symbol,
-                    "side": "SELL" if longshort else "BUY",
-                    "type": "STOP_MARKET",
-                    "positionSide": "LONG" if longshort else "SHORT",
-                    "quantity": str(quantity),
-                    "timeInForce": "GTC",
-                    "stopPrice": str(sl_price),
-                    "priceProtect": "TRUE",
-                    "closePosition": "TRUE",
-                    "workingType": "CONTRACT_PRICE",
-                    "newClientOrderId": "sl_" + str(tf) + '_' + str(fc) + '_' + str(order_et['orderId']),
-                }
-            ]
-            r2 = api_call('new_batch_order', [params_sl])
-            if r2:
-                try:
-                    order_sl = r2[0]
-                    if order_sl['code']:
-                        logger.error('_NEWET ET FAIL 2 ' + str(order_sl))
-                        api_call('cancel_batch_order', [symbol, [order_et['orderId']], []])
-                        return False, o_his
-                except:
-                    pass
-                o_his = add_etsl_history(o_his, symbol, tf, fc, longshort, qtyrate_k, wavepattern, et_price,
-                                             sl_price, tp_price, tp_price_w5, quantity, order_et['orderId'],
-                                             order_sl['orderId'],
-                                             order_et,
-                                             order_sl, run_mode)
-
-                o_his = get_order_history_etsl_and_new_tp_order(o_his, symbol, run_mode, order_et['orderId'])
-                return True, o_his
-            else:
+                                o_his = add_etsl_history(o_his, symbol, tf, fc, longshort, qtyrate_k, wavepattern, et_price,
+                                                             sl_price, tp_price, tp_price_w5, quantity, order_et['orderId'],
+                                                             order_sl['orderId'],
+                                                             order_et,
+                                                             order_sl,
+                                                             t_mode
+                                                         )
+                                o_his = get_order_history_etsl_and_new_tp_order(o_his, symbol, order_et['orderId'], t_mode)
+                                return True, o_his
+                        except Exception as e:
+                            r3 = api_call('cancel_batch_order', [symbol, [order_et['orderId']], []])
+                            if r3:
+                                try:
+                                    order_cancel_et = r3[0]
+                                    if order_cancel_et['code']:
+                                        logger.error('_NEWET ET CANCEL FAIL ' + order_cancel_et['code'])
+                                        return False, o_his
+                                except:
+                                    logger.error('_NEWET ET CANCEL FAIL2 ' + order_cancel_et['code'])
+                                    return False, o_his
+            except Exception as e:
                 r3 = api_call('cancel_batch_order', [symbol, [order_et['orderId']], []])
                 if r3:
                     try:
@@ -612,48 +625,51 @@ def new_et_order(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price, tp_pr
                             logger.error('_NEWET ET CANCEL FAIL ' + order_cancel_et['code'])
                             return False, o_his
                     except:
+                        logger.error('_NEWET ET CANCEL FAIL1 ' + order_cancel_et['code'])
                         return False, o_his
         else:
-            logger.info(symbol + ' _FAIL ET ITSELF FAIL' + str(
+            logger.info(symbol + ' _FAIL ET ITSELF FAIL0' + str(
                 (symbol, tf, fc, longshort, et_price, sl_price, tp_price, quantity, wavepattern)))
-
-    elif run_mode == 'BACKTEST':
-        order_et_bt = {
-            "symbol": symbol,
-            "side": "BUY" if longshort else "SELL",
-            "type": "LIMIT",
-            "positionSide": "LONG" if longshort else "SHORT",
-            "quantity": str(float(quantity)),
-            "timeInForce": "GTC",
-            "price": str(et_price),
-            "newClientOrderId": str(tf) + '_' + str(fc) + '_' + str(sl_price) + '_' + str(tp_price_w5),
-        }
-        order_sl_bt = {
-                    "symbol": symbol,
-                    "side": "SELL" if longshort else "BUY",
-                    "type": "STOP_MARKET",
-                    "positionSide": "LONG" if longshort else "SHORT",
-                    "quantity": str(quantity),
-                    "timeInForce": "GTC",
-                    "stopPrice": str(sl_price),
-                    "priceProtect": "TRUE",
-                    "closePosition": "TRUE",
-                    "workingType": "CONTRACT_PRICE",
-                    "newClientOrderId": "sl_" + str(tf) + '_' + str(fc) + '_' + str(et_orderId_p),
-                }
-        o_his = add_etsl_history(o_his, symbol, tf, fc, longshort, qtyrate_k, wavepattern, et_price,
-                                 sl_price, tp_price, tp_price_w5, quantity, et_orderId_p,
-                                 randrange(10000000000, 99999999999, 1),
-                                 order_et_bt,
-                                 order_sl_bt, run_mode)
-
-        o_his = get_order_history_etsl_and_new_tp_order(o_his, symbol, run_mode, et_orderId_p)
-        return True, o_his
-
+    except Exception as e:
+        logger.error( symbol + ' new_et_order_real order_et error : e ' + str(e))
     return False, o_his
 
 
-def new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId_p, run_mode, o_his):
+def new_et_order_test(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price, tp_price, tp_price_w5, quantity, wavepattern, et_orderid_test, o_his, t_mode):
+    order_et_bt = {
+        "symbol": symbol,
+        "side": "BUY" if longshort else "SELL",
+        "type": "LIMIT",
+        "positionSide": "LONG" if longshort else "SHORT",
+        "quantity": str(float(quantity)),
+        "timeInForce": "GTC",
+        "price": str(et_price),
+        "newClientOrderId": str(tf) + '_' + str(fc) + '_' + str(sl_price) + '_' + str(tp_price),
+    }
+    order_sl_bt = {
+        "symbol": symbol,
+        "side": "SELL" if longshort else "BUY",
+        "type": "STOP_MARKET",
+        "positionSide": "LONG" if longshort else "SHORT",
+        "quantity": str(quantity),
+        "timeInForce": "GTC",
+        "stopPrice": str(sl_price),
+        "priceProtect": "TRUE",
+        "closePosition": "TRUE",
+        "workingType": "CONTRACT_PRICE",
+        "newClientOrderId": "sl_" + str(tf) + '_' + str(fc) + '_' + str(et_orderid_test),
+    }
+    o_his = add_etsl_history(o_his, symbol, tf, fc, longshort, qtyrate_k, wavepattern, et_price,
+                             sl_price, tp_price, tp_price_w5, quantity, et_orderid_test,
+                             randrange(10000000000, 99999999999, 1),
+                             order_et_bt,
+                             order_sl_bt, t_mode)
+
+    o_his = get_order_history_etsl_and_new_tp_order(o_his, symbol, et_orderid_test, t_mode)
+    return True, o_his
+
+
+def new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId_p, t_mode, o_his):
     params = [
         {
             "symbol": symbol,
@@ -669,13 +685,13 @@ def new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId_p, ru
             "newClientOrderId": 'tp_' + str(tf) + '_' + str(fc) + '_' + str(et_orderId_p)
         }
     ]
-    if run_mode == 'REAL':
+    if t_mode == 'REAL':
         result_tp = api_call('new_batch_order', [params])
         if result_tp:
             order_tp = result_tp[0]
-            o_his = add_tp_history(run_mode, o_his, symbol, et_orderId_p, order_tp['orderId'], order_tp)
+            o_his = add_tp_history(o_his, symbol, et_orderId_p, order_tp['orderId'], order_tp)
             return True, o_his
-    elif run_mode == 'BACKTEST':
+    elif t_mode in ['BACKTEST', 'PAPER']:
         order_tp_bt = {
             "symbol": symbol,
             "side": "SELL" if longshort else "BUY",
@@ -714,22 +730,27 @@ def cancel_batch_order(symbol, order_id_l, desc):
     return False
 
 
-def c_plrate_adaptive(o_his, symbol, longshort, w):
-    et_price, sl_price, tp_price, tp_price_w5 = get_trade_prices(o_his, symbol, longshort, w)
-    b_symbol = abs(tp_price - et_price) / abs(sl_price - et_price)  # one trade profitlose rate
-    if c_plrate_adaptive:
-        if b_symbol > c_plrate_rate or c_plrate_rate_min > b_symbol:
-            return False
+def c_in_plrate_adaptive(o_his, symbol, longshort, w, t_mode):
+    try:
+        et_price, sl_price, tp_price, tp_price_w5 = get_trade_prices(o_his, symbol, longshort, w, t_mode)
+        b_symbol = abs(tp_price - et_price) / abs(sl_price - et_price)  # one trade profit/lose rate
+        if c_plrate_adaptive:
+            if b_symbol > c_plrate_rate or c_plrate_rate_min > b_symbol:
+                return False
+    except Exception as e:
+        logger.error(symbol + ' ' + str(e))
     return True
 
 
-def c_in_no_double_ordering(o_his, symbol, longshort, tf, fc, w):
+def c_in_no_double_ordering(o_his, symbol, longshort, tf, fc, w, t_mode):
     #####  이중 new limit order 방지 로직 start #####
     history_new = [x for x in o_his if
-                   (x['symbol'] == symbol and x['status'] == 'ETSL'
+                   (x['symbol'] == symbol
+                    and x['trade_mode'] == t_mode
+                    and x['status'] == 'ETSL'
                     and x['timeframe'] == tf and x['fcnt'] == fc)]
 
-    et_price, sl_price, tp_price, tp_price_w5 = get_trade_prices(o_his, symbol, longshort, w)
+    et_price, sl_price, tp_price, tp_price_w5 = get_trade_prices(o_his, symbol, longshort, w, t_mode)
 
     if len(history_new) > 0:
         for history in history_new:
@@ -745,7 +766,7 @@ def c_in_no_double_ordering(o_his, symbol, longshort, tf, fc, w):
 
                 if float(r_query_limit['price']) == float(et_price) \
                         and float(r_query_limit['clientOrderId'].split('_')[2]) == float(sl_price) \
-                        and float(r_query_limit['clientOrderId'].split('_')[3]) == float(tp_price_w5):
+                        and float(r_query_limit['clientOrderId'].split('_')[3]) == float(tp_price):
                     # print('c_in_no_double_ordering:' + str([symbol, longshort, tf, fc, et_price, sl_price, tp_price, tp_price_w5]))
                     # logger.info('c_in_no_double_ordering:' + str([symbol, longshort, tf, fc, et_price, sl_price, tp_price, tp_price_w5]))
                     return False
@@ -774,7 +795,7 @@ def c_active_no_empty(df, w):  # 거의 영향을 안줌
 
 
 def c_active_next_bean_ok(df, o_his, symbol, longshort, w):  ##### 거래건수 차이가 많이 남 없으면, 많아짐
-    et_price, sl_price, tp_price, tp_price_w5 = get_trade_prices(o_his, symbol, longshort, w)
+    et_price, sl_price, tp_price_w5 = get_wave_prices(symbol, longshort, w)
     df_active_next = df[w.idx_end + 1: w.idx_end + 2]  # 웨이브가 끝나고 하나의 봉을 더 보고 그 다음부터 거래가 가능
     if not df_active_next.empty:
         df_active_next_high = df_active_next['High'].iat[0]
@@ -809,39 +830,45 @@ def c_current_price_in_zone(symbol, longshort, w):
     sl_price = w0
     between_entry_target = et_price + abs(tp_price - et_price) * (et_zone_rate) if longshort else et_price - abs(
         tp_price - et_price) * (et_zone_rate)
-    current_price = float(api_call('ticker_price', [symbol])['price'])
-    c_current_price_in_zone = (current_price > sl_price and current_price < between_entry_target) \
+    c_price = float(api_call('ticker_price', [symbol])['price'])
+    c_price_in_zone = (c_price > sl_price and c_price < between_entry_target) \
         if longshort else \
-        (current_price < sl_price and current_price > between_entry_target)
+        (c_price < sl_price and c_price > between_entry_target)
 
-    if not c_current_price_in_zone:
+    if not c_price_in_zone:
         return False
     return True
 
 
-def c_currentprice_in_zone_by_prices(symbol, longshort, et_price, tp_price):
-    between_entry_target = et_price + abs(tp_price - et_price) * (et_zone_rate) if longshort else et_price - abs(
-        tp_price - et_price) * (et_zone_rate)
-    current_price = float(api_call('ticker_price', [symbol])['price'])
-    c_current_price_in_zone = (current_price > et_price and current_price < between_entry_target) \
+def c_current_price_in_zone_by_prices(symbol, longshort, et_price, tp_price):
+    between_entry_target = et_price + abs(tp_price - et_price) * (et_zone_rate) if longshort else et_price - abs(tp_price - et_price) * (et_zone_rate)
+    c_price = float(api_call('ticker_price', [symbol])['price'])
+    c_price_in_zone = (c_price > et_price and c_price < between_entry_target) \
         if longshort else \
-        (current_price < et_price and current_price > between_entry_target)
+        (c_price < et_price and c_price > between_entry_target)
 
-    if not c_current_price_in_zone:
+    if not c_price_in_zone:
         return False
     return True
 
 
-def c_active_in_zone(df, o_his, symbol, longshort, w):
+def c_current_price_in_zone_by_prices_k_close(symbol, longshort, et_price, tp_price, c_price):
+    between_entry_target = et_price + abs(tp_price - et_price) * (et_zone_rate) if longshort else et_price - abs(tp_price - et_price) * (et_zone_rate)
+    c_price_in_zone = (c_price > et_price and c_price < between_entry_target) \
+        if longshort else \
+        (c_price < et_price and c_price > between_entry_target)
+    if not c_price_in_zone:
+        return False
+    return True
+
+
+def c_active_in_zone(df, longshort, w, et_price, sl_price, tp_price, tp_price_w5, price_base):
     w_start_price = w.values[0]  # wave1
+    w2_price = w.values[3]
     w_end_price = w.values[-1]  # wave5
     height_price = abs(w_end_price - w_start_price)
     o_fibo_value = height_price * o_fibo / 100 if o_fibo else 0
-
-    et_price, sl_price, tp_price, tp_price_w5 = get_trade_prices(o_his, symbol, longshort, w)
-
     df_active = df.loc[df['Date'] > w.dates[-1]]  # 2023.3.13 after liqu  # df[w.idx_end + 1:]
-
     if not df_active.empty:
         try:
             active_max_value = max(df_active.High.tolist(), default=tp_price_w5)
@@ -849,21 +876,26 @@ def c_active_in_zone(df, o_his, symbol, longshort, w):
         except Exception as e:
             logger.error('active_max_value:' + str(e))
 
-        # c_active_min_max_in_zone = (active_min_value > et_price and active_max_value < (w_end_price + o_fibo_value)) \
-        #                         if longshort else \
-        #                     (active_max_value < et_price and active_min_value > (w_end_price - o_fibo_value))
-
-        c_active_min_max_in_zone = (active_min_value > sl_price and active_max_value < (tp_price_w5 + o_fibo_value)) \
-            if longshort else \
-            (active_max_value < sl_price and active_min_value > (tp_price_w5 - o_fibo_value))
+        if price_base == 'ET_PRICE':
+            c_active_min_max_in_zone = (active_min_value > et_price and active_max_value < (w_end_price + o_fibo_value)) \
+                                    if longshort else \
+                                (active_max_value < et_price and active_min_value > (w_end_price - o_fibo_value))
+        elif price_base == 'W2_PRICE':
+            c_active_min_max_in_zone = (active_min_value > w2_price and active_max_value < (w_end_price + o_fibo_value)) \
+                                    if longshort else \
+                                (active_max_value < w2_price and active_min_value > (w_end_price - o_fibo_value))
+        elif price_base == 'SL_PRICE':
+            c_active_min_max_in_zone = (active_min_value > sl_price and active_max_value < (tp_price_w5 + o_fibo_value)) \
+                if longshort else \
+                (active_max_value < sl_price and active_min_value > (tp_price_w5 - o_fibo_value))
         if not c_active_min_max_in_zone:
             return False
     return True
 
 
-def c_in_no_risk(o_his, symbol, longshort, w, t_info, qtyrate):
+def c_in_no_risk(o_his, symbol, longshort, w, t_info, qtyrate, t_mode):
     qtyrate_k = get_qtyrate_k(t_info, qtyrate)
-    et_price, sl_price, tp_price, tp_price_w5 = get_trade_prices(o_his, symbol, longshort, w)
+    et_price, sl_price, tp_price, tp_price_w5 = get_trade_prices(o_his, symbol, longshort, w, t_mode)
 
     if c_risk_beyond_flg:
         pnl_percent_sl = (abs(et_price - sl_price) / et_price) * qtyrate_k
@@ -882,24 +914,24 @@ def c_in_no_risk(o_his, symbol, longshort, w, t_info, qtyrate):
     return True
 
 
-def check_cons_for_new_etsl_order(o_his, df, symbol, tf, fc, longshort, w, idx, t_info, qtyrate):
+def check_cons_for_new_etsl_order(o_his, df, symbol, tf, fc, longshort, w, et_price, sl_price, tp_price, tp_price_w5, ix, t_mode, t_info, qtyrate):
     try:
-        if not c_plrate_adaptive(o_his, symbol, longshort, w):
+        if not c_in_plrate_adaptive(o_his, symbol, longshort, w, t_mode):
             return False
-        # if not c_real_condition_by_fractal_index(df, fc, w, idx):
+        # if not c_real_condition_by_fractal_index(df, fc, w, ix):
         #     return False
         if not c_active_no_empty(df, w):
             return False
         # if not c_active_next_bean_ok(df, o_his, symbol, longshort, w): # 미적용하는게 휠씬 이익이 극대화 된다.
         #     return False
-        if not c_in_no_risk(o_his, symbol, longshort, w, t_info, qtyrate):
+        if not c_in_no_risk(o_his, symbol, longshort, w, t_info, qtyrate, t_mode):
             return False
-        # if not c_active_in_time(df, w):
-        #     return False
-        if run_mode == 'REAL':
-            if not c_in_no_double_ordering(o_his, symbol, longshort, tf, fc, w):
+        if t_mode in ['REAL']:
+            # if not c_active_in_time(df, w):
+            #     return False
+            if not c_in_no_double_ordering(o_his, symbol, longshort, tf, fc, w, t_mode):
                 return False
-            if not c_active_in_zone(df, o_his, symbol, longshort, w):
+            if not c_active_in_zone(df, longshort, w, et_price, sl_price, tp_price, tp_price_w5, 'W2_PRICE'):
                 return False
             if not c_current_price_in_zone(symbol, longshort, w):
                 return False
@@ -947,10 +979,10 @@ def c_balance_and_calc_quanty(symbol):
             symbol, str(available_balance), str(wallet_balance)))
         return False, None
 
-    # max_quantity = float(available_balance) * int(leveragexxxxx) / current_price
+    # max_quantity = float(available_balance) * int(leveragexxxxx) / c_price
     # quantity = max_quantity * qtyrate
-    current_price = float(api_call('ticker_price', [symbol])['price'])
-    quantity = wallet_balance * qtyrate / current_price
+    c_price = float(api_call('ticker_price', [symbol])['price'])
+    quantity = wallet_balance * qtyrate / c_price
     step_size, minqty = get_quantity_step_size_minqty(symbol)
     quantity = format_value(quantity, step_size)
 
@@ -974,14 +1006,16 @@ def c_balance_and_calc_quanty(symbol):
     return True, quantity
 
 
-def c_check_valid_wave_in_history(o_his, symbol, tf, fc, wavepattern, et_price, sl_price, tp_price, tp_price_w5):
+def c_check_valid_wave_in_history(o_his, symbol, tf, fc, wavepattern, et_price, sl_price, tp_price, tp_price_w5, t_mode):
     try:
         if o_his:
             order_filter = [x for x in o_his
-                            if x['symbol'] == symbol
+                            if
+                            x['trade_mode'] == t_mode
+                            and x['symbol'] == symbol
                             # and x['timeframe'] == tf
                             # and x['fcnt'] == fc
-                            and x['status'] in ['ETSL', 'TP', 'WIN', 'LOSE']
+                            and x['status'] in ['ETSL', 'TP', 'WIN', 'LOSE', 'FORCE']
                             and x['et_price'] == et_price
                             and x['sl_price'] == sl_price
                             # and x['tp_price'] == tp_price
@@ -992,7 +1026,7 @@ def c_check_valid_wave_in_history(o_his, symbol, tf, fc, wavepattern, et_price, 
             if order_filter:
                 return False
     except Exception as e:
-        print(e)
+        logger.error(symbol + ' c_check_valid_wave_in_history' + str(e))
     return True
 
 
@@ -1057,14 +1091,15 @@ def c_allowed_intersect(i, longshort, trends, detrends, line_price, cross_cnt=1)
     return True
 
 
-def c_allowed_intersect_df(symbol, df, w, line_price, cross_cnt):
+def c_allowed_intersect_df(df_active, line_price, cross_cnt):
     if intersect_idx:
-        df_active = df[w.idx_end:]  # w5 stick 포함
-        df_active['cross'] = df_active.apply(lambda x: 1 if x['High'] >= line_price and line_price >= x['Low'] else 0,
-                                             axis=1)
-        cross_count = df_active['cross'].sum(axis=0)
-        if cross_count > cross_cnt:
-            return False, cross_count
+        # df_active = df[w.idx_end:]  # w5 stick 포함 or --> maybe here, right -> No포함 (df[w.idx_end + 1:])
+        if not df_active.empty:
+            df_active['cross'] = df_active.apply(lambda x: 1 if x['High'] >= line_price and line_price >= x['Low'] else 0,
+                                                 axis=1)
+            cross_count = df_active['cross'].sum(axis=0)
+            if cross_count > cross_cnt:
+                return False, cross_count
     return True, cross_count
 
 
@@ -1111,7 +1146,7 @@ def get_historical_ohlc_data_start_end(symbol, start_int, end_int, past_days=Non
 
         except Exception as e:
             time.sleep(0.1)
-            logger.info(e)
+            # logger.info(symbol + ' in futures_historical_klines e :' + str(e))
             return D, start_date_str, end_date_str
 
         if D is not None and D.empty:
@@ -1140,25 +1175,25 @@ def get_historical_ohlc_data_start_end(symbol, start_int, end_int, past_days=Non
         D['Volume'] = D['Volume'].astype(float)
         D = D[new_names]
     except Exception as e:
-        print('e in get_historical_ohlc_data_start_end:%s' % e)
-        pass
+        time.sleep(0.1)
+        # logger.info(symbol + ' in get_historical_ohlc_data_start_end e :' + str(e))
     return D, start_date_str, end_date_str
 
 
-def get_waves(symbol, tf, t_info, run_mode, i=None):
-    if run_mode == 'REAL':
+def get_waves(symbol, tf, t_info, t_mode, i=None):
+    if t_mode in ['REAL', 'PAPER']:
         delta = (4 * fcnt[-1] + 1)
         df = get_fetch_dohlcv(symbol,
                               interval=tf,
                               limit=delta)
-    elif run_mode == 'BACKTEST':
+    elif t_mode in ['BACKTEST']:
         start_int = i
         end_int = start_int - period_interval
 
         if start_int == 0 or end_int < 0:
             end_int = None
 
-        if end_int is not None and start_int <= end_int:
+        if end_int is not None and start_int <= end_int or start_int == 0:
             return t_info
 
         df, start_date, end_date = get_historical_ohlc_data_start_end(symbol,
@@ -1167,6 +1202,8 @@ def get_waves(symbol, tf, t_info, run_mode, i=None):
                                                                       past_days=None,
                                                                       interval=tf, futures=futures)
     if df is not None and df.empty:
+        return
+    if df is None:
         return
     try:
         wa = WaveAnalyzer(df=df, verbose=True)
@@ -1203,322 +1240,399 @@ def get_waves(symbol, tf, t_info, run_mode, i=None):
         wavepatterns = set()
 
         if ('long' in type) and ('short' in type): idxs = sorted(list(set(lows_idxs) | set(highs_idxs)))
-        for ix in idxs:
-            longshort = None
-            for wave_opt in wave_options.options_sorted:
-                if ix in lows_idxs:
-                    wave = wa.find_impulsive_wave(idx_start=ix, wave_config=wave_opt.values)
-                    longshort = True
-                    rules_to_check = [impulse]
-                elif ix in highs_idxs:
-                    wave = wa.find_downimpulsive_wave(idx_start=ix, wave_config=wave_opt.values)
-                    longshort = False
-                    rules_to_check = [downimpulse]
 
-                if wave:
-                    wavepattern = WavePattern(wave, verbose=True)
-                    if (wavepattern.idx_end - wavepattern.idx_start + 1) >= fc / 2:
-                        for rule in rules_to_check:
-                            if wavepattern.check_rule(rule):
-                                if wavepattern in wavepatterns:
-                                    continue
-                                else:
-                                    wave_list.append(
-                                        [symbol, df, tf, fc, longshort, wavepattern, ix, wave_opt, df_lows_plot,
-                                         df_highs_plot])
-                                    wavepatterns.add(wavepattern)
+        if idxs:
+            for ix in idxs:
+                longshort = None
+                for wave_opt in wave_options.options_sorted:
+                    if ix in lows_idxs:
+                        wave = wa.find_impulsive_wave(idx_start=ix, wave_config=wave_opt.values)
+                        longshort = True
+                        rules_to_check = [impulse]
+                    elif ix in highs_idxs:
+                        wave = wa.find_downimpulsive_wave(idx_start=ix, wave_config=wave_opt.values)
+                        longshort = False
+                        rules_to_check = [downimpulse]
+
+                    if wave:
+                        wavepattern = WavePattern(wave, verbose=True)
+                        if (wavepattern.idx_end - wavepattern.idx_start + 1) >= fc / 2:
+                            for rule in rules_to_check:
+                                if wavepattern.check_rule(rule):
+                                    if wavepattern in wavepatterns:
+                                        continue
+                                    else:
+                                        wave_list.append(
+                                            [symbol, df, tf, fc, longshort, wavepattern, ix, wave_opt, df_lows_plot,
+                                             df_highs_plot])
+                                        wavepatterns.add(wavepattern)
 
     return wave_list
 
 
-wavepattern_l = list()
+def real_trade(symbol, tf, fc, longshort, et_price, sl_price, tp_price, tp_price_w5, w, t_mode, o_his, df_lows_plot, df_highs_plot, df, t_info):
+    available, quantity = c_balance_and_calc_quanty(symbol)
+    if available:
+        df_active_with_w5_stick = df[w.idx_end:]
+        c_interset, cross_cnt = c_allowed_intersect_df(df_active_with_w5_stick, et_price, 1)  # w5 stick 포함하여 계산, 1번 초과 제외
+        if not c_interset:
+            return t_info, o_his
+        if cross_cnt <= 1:
+            # check current price
+            c_price = float(api_call('ticker_price', [symbol])['price'])
+            w2_price = w.values[3]
+            c_c_price_position = c_price < et_price and c_price > w2_price if longshort else c_price > et_price and c_price < w2_price
+            if not c_c_price_position:
+                return t_info, o_his
+        try:
+            qtyrate_k = get_qtyrate_k(t_info, qtyrate)
+            r_order, o_his = new_et_order_real(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price, tp_price, tp_price_w5, quantity, w, o_his, 'REAL')
+            if r_order:
+                if plotview:
+                    try:
+                        plot_pattern_n(df=df,
+                                       wave_pattern=[[1, w.dates[0], id(w), w]],
+                                       df_lows_plot=df_lows_plot, df_highs_plot=df_highs_plot,
+                                       trade_info=None,
+                                       title=str(t_mode + ' ' + symbol + ' %s ' % str('LONG' if longshort else 'SHORT') + '%sm %s' % (
+                                           tf, fc) + ', ET: ' + str(et_price)))
+                    except Exception as e:
+                        logger.error(symbol + ' ' + str(e))
+            pass
+        except Exception as e:
+            logger.error('real_trade: %s' % str(e))
+    return t_info, o_his
 
 
-def monitor_wave_and_action(symbol_p, tf_p, r_mode, t_info, o_his, i=None):
-    wave_list = get_waves(symbol_p, tf_p, t_info, r_mode, i=i)
-    for wave in wave_list:
-        symbol = wave[0]
-        df = wave[1]
-        tf = wave[2]
-        fc = wave[3]
-        longshort = wave[4]
-        wavepattern = wave[5]
-        ix = wave[6]
-        wave_opt = wave[7]
-        df_lows_plot = wave[8]
-        df_highs_plot = wave[9]
-        et_price, sl_price, tp_price, tp_price_w5 = get_trade_prices(o_his, symbol, longshort,
-                                                                     wavepattern)
-        if c_check_valid_wave_in_history(o_his, symbol, tf, fc, wavepattern, et_price, sl_price, tp_price, tp_price_w5):
-            if check_cons_for_new_etsl_order(o_his, df, symbol, tf, fc, longshort, wavepattern, ix,
-                                             t_info, qtyrate):
-                if r_mode == 'REAL':
-                    available, quantity = c_balance_and_calc_quanty(symbol)
-                    if available:
-                        # et_price, sl_price, tp_price, tp_price_w5 = get_trade_prices(o_his, symbol, longshort,
-                        #                                                              wavepattern)
-                        c_interset, cross_cnt = c_allowed_intersect_df(symbol, df, wavepattern, et_price, 1)  # 1번 초과 크로스시 거래대상 제외
+def test_trade(symbol, tf, fc, longshort, et_price, sl_price, tp_price, tp_price_w5, w, t_mode, o_his, df_lows_plot, df_highs_plot, wavepatterns, wavepattern_tpsl_l, wave_option_plot_l, wave_opt, ix, df, t_info):
+    wavepatterns.add(w)
+    # wavepattern_l.append([symbol, fc, ix, w.dates[0], id(w), w])
+    wave_option_plot_l.append([
+        [str(w.dates[-1])],
+        [w.values[-1]],
+        [str(wave_opt.values)]
+    ])
+
+    w = w
+    t = t_info
+    stats_history = t[0]
+    order_history = t[1]
+    asset_history = t[2]
+    trade_count = t[3]
+    fee_history = t[4]
+    pnl_history = t[5]
+    wavepattern_history = t[6]
+
+    # df_smaN = sma_df(df, fcnt)
+
+    w_start_price = w.values[0]  # wave1
+    w_end_price = w.values[-1]  # wave5
+    height_price = abs(w_end_price - w_start_price)
+    o_fibo_value = height_price * o_fibo / 100 if o_fibo else 0
+
+    out_price = None
+
+    qtyrate_k = get_qtyrate_k(t_info, qtyrate)
+
+    df_active = df[w.idx_end + 1:]
+    df_active_with_w5_stick = df[w.idx_end:]
+    # df_active = df[w.idx_end:]  # xxxxx 틀렸음
+
+    dates = df_active.Date.tolist()
+    closes = df_active.Close.tolist()
+    trends = df_active.High.tolist() if longshort else df_active.Low.tolist()
+    detrends = df_active.Low.tolist() if longshort else df_active.High.tolist()
+
+    position_enter_i = []
+    position = False
+    et_exec_flg = False
+    et_orderid_test = randrange(10000000000, 99999999999, 1)
+
+    if dates:
+        for k, close in enumerate(closes):
+            try:
+                df_k = df[:(w.idx_end + 1) + (k + 1)]
+                df_active_k = df_active[:(k + 1)]
+            except Exception as e:
+                print('here e: %s' % str(e))
+
+            # if not c_active_in_time(df_i, w):
+            #     return False
+
+            # if not c_active_in_zone(df_active_k, longshort, w, et_price, sl_price, tp_price, tp_price_w5, 'ET_PRICE'):
+            #     return False
+            #
+            # c_interset, cross_cnt = c_allowed_intersect_df(df_active_k, et_price, 1)  # 1번 초과 제외
+            # if not c_interset:
+            #     return t_info, o_his
+            if t_mode in ['PAPER']:
+                if paper_flg:
+                    if not et_exec_flg:
+
+                        c_interset, cross_cnt = c_allowed_intersect_df(df_active_with_w5_stick, et_price, 0)  # 0번 초과 제외
                         if not c_interset:
                             return t_info, o_his
-                        if cross_cnt == 1:
-                            # check current price
-                            current_price = float(api_call('ticker_price', [symbol])['price'])
-                            c_current_price_position = current_price < et_price if longshort else current_price > et_price
-                            if not c_current_price_position:
-                                return t_info, o_his
-                        try:
-                            qtyrate_k = get_qtyrate_k(t_info, qtyrate)
-                            r_order, o_his = new_et_order(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price, tp_price,
-                                                        tp_price_w5, quantity, wavepattern, run_mode, o_his, '')
-                            if r_order:
-                                if plotview:
-                                    plot_pattern_n(df=df,
-                                                   wave_pattern=[[1, wavepattern.dates[0], id(wavepattern), wavepattern]],
-                                                   df_lows_plot=df_lows_plot, df_highs_plot=df_highs_plot,
-                                                   trade_info=None, title=str(symbol + ' %s ' % str('LONG' if longshort else 'SHORT') + '%sm %s' % (
-                                                tf, fc) + ', ET: ' + str(et_price)))
-                            pass
-                        except Exception as e:
-                            logger.error('new_et_order: %s' % str(e))
 
-                elif r_mode == 'BACKTEST':
+                        if not c_active_in_zone(df_active_with_w5_stick, longshort, w, et_price, sl_price, tp_price, tp_price_w5,
+                                                'ET_PRICE'):
+                            return t_info, o_his
 
-                    wavepatterns = set()
-                    # wavepattern_l = []
-                    wavepattern_tpsl_l = []
-                    wave_option_plot_l = []
-
-
-                    wavepatterns.add(wavepattern)
-                    wavepattern_l.append(
-                        [symbol, fc, ix, wavepattern.dates[0], id(wavepattern), wavepattern])
-                    wave_option_plot_l.append([
-                        [str(wavepattern.dates[-1])],
-                        [wavepattern.values[-1]],
-                        [str(wave_opt.values)]
-                    ])
-
-                    w = wavepattern
-                    t = t_info
-                    stats_history = t[0]
-                    order_history = t[1]
-                    asset_history = t[2]
-                    trade_count = t[3]
-                    fee_history = t[4]
-                    pnl_history = t[5]
-                    wavepattern_history = t[6]
-
-                    # df_smaN = sma_df(df, fcnt)
-
-                    w_start_price = w.values[0]  # wave1
-                    w_end_price = w.values[-1]  # wave5
-                    height_price = abs(w_end_price - w_start_price)
-                    o_fibo_value = height_price * o_fibo / 100 if o_fibo else 0
-
-                    et_price, sl_price, tp_price, tp_price_w5 = get_trade_prices(o_his, symbol, longshort,
-                                                                                 wavepattern)
-                    out_price = None
-
-                    qtyrate_k = get_qtyrate_k(t_info, qtyrate)
-
-                    df_active = df[w.idx_end + 1:]
-                    # df_active = df[w.idx_end:]  # xxxxx 틀렸음
-
-                    dates = df_active.Date.tolist()
-                    closes = df_active.Close.tolist()
-                    trends = df_active.High.tolist() if longshort else df_active.Low.tolist()
-                    detrends = df_active.Low.tolist() if longshort else df_active.High.tolist()
-
-                    position_enter_i = []
-                    position = False
-                    h_id = dt.datetime.now().timestamp()
-
-                    w_idx_width = w.idx_end - w.idx_start
-                    if closes:
-                        for i, close in enumerate(closes):
-                            c_out_idx_width_beyond = True if (i / w_idx_width >= c_time_beyond_rate) else False
-                            c_out_trend_beyond = trends[i] >= (
-                                    w_end_price + o_fibo_value) if longshort else \
-                                trends[i] <= (w_end_price - o_fibo_value)
-                            if position is False and c_out_idx_width_beyond and c_time_beyond_flg:
-                                if printout:  logger.info('c_out_idx_width_beyond , ',
-                                                          w_idx_width, i)
-                                return t_info, False
-                            elif position is False and c_out_trend_beyond:
-                                if printout:  logger.info('c_out_trend_beyond ', i, close)
-                                return t_info, False
-
-                            c_positioning = (position is False and detrends[i] <= et_price and
-                                             detrends[i] > sl_price) if longshort else (
-                                    position is False and detrends[i] >= et_price and
-                                    detrends[i] < sl_price)
-                            c_profit = (position and trends[i] >= tp_price) if longshort else (
-                                    position and trends[i] <= tp_price)
-                            c_stoploss = (position and detrends[i] <= sl_price) if longshort else (
-                                    position and detrends[i] >= sl_price)
-                            c_stoploss_direct = (detrends[i] <= sl_price and trends[i] >= et_price) if longshort else (
-                                    detrends[i] >= sl_price and trends[i] <= et_price)
-
-                            if c_stoploss_direct:
-                                position = True
-                                c_stoploss = True
-                                position_enter_i = [symbol, et_price, sl_price, tp_price,
-                                                    dates[i]]
-
-                                logger.info('c_stoplost_direct')
-
-                            elif position is False and c_positioning:
-                                position = True
-                                position_enter_i = [symbol, et_price, sl_price, tp_price,
-                                                    dates[i]]
-
-
-                            if position is True:
-                                if c_profit or c_stoploss:
-                                    et_orderId = randrange(10000000000, 99999999999, 1)
-                                    r_order, o_his = new_et_order(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price, tp_price, tp_price_w5, 1, wavepattern, run_mode, o_his, et_orderId)
-
-                                    fee_limit_tp = 0
-                                    if tp_type == 'maker':
-                                        fee_limit_tp = (fee_limit + fee_tp) * qtyrate_k
-                                    elif tp_type == 'taker':
-                                        fee_limit_tp = (fee_limit + fee_tp + fee_slippage) * qtyrate_k
-                                    fee_limit_sl = (fee_limit + fee_sl + fee_slippage) * qtyrate_k
-
-                                    fee_percent = 0
-                                    pnl_percent = 0
-                                    win_lose_flg = 0
-                                    if c_stoploss:
-                                        win_lose_flg = 0
-                                        pnl_percent = -(abs(
-                                            et_price - sl_price) / et_price) * qtyrate_k
-                                        fee_percent = fee_limit_sl
-                                        trade_count.append(0)
-                                        trade_inout_i = [position_enter_i[0],
-                                                         position_enter_i[1],
-                                                         position_enter_i[2],
-                                                         position_enter_i[3],
-                                                         position_enter_i[4], dates[i],
-                                                         longshort, 'LOSE']
-                                        out_price = sl_price
-                                        order_history.append(trade_inout_i)
-                                        o_his = update_history_status(o_his, symbol, et_orderId, 'LOSE')
-
-                                    if c_profit:
-                                        win_lose_flg = 1
-                                        pnl_percent = (abs(
-                                            tp_price - et_price) / et_price) * qtyrate_k
-                                        fee_percent = fee_limit_tp
-                                        trade_count.append(1)
-                                        trade_inout_i = [position_enter_i[0],
-                                                         position_enter_i[1],
-                                                         position_enter_i[2],
-                                                         position_enter_i[3],
-                                                         position_enter_i[4], dates[i],
-                                                         longshort, 'WIN']
-                                        out_price = tp_price
-                                        order_history.append(trade_inout_i)
-                                        o_his = update_history_status(o_his, symbol, et_orderId, 'WIN')
-
-                                    asset_history_pre = asset_history[-1] if asset_history else seed
-                                    asset_new = asset_history_pre * (1 + pnl_percent - fee_percent)
-                                    pnl_history.append(asset_history_pre * pnl_percent)
-                                    fee_history.append(asset_history_pre * fee_percent)
-                                    asset_history.append(asset_new)
-                                    wavepattern_history.append(wavepattern)
-
-                                    winrate = (sum(trade_count) / len(trade_count)) * 100
-
-                                    asset_min = seed
-                                    asset_max = seed
-
-                                    if len(stats_history) > 0:
-                                        asset_last_min = stats_history[-1][-2]
-                                        asset_min = asset_new if asset_new < asset_last_min else asset_last_min
-                                        asset_last_max = stats_history[-1][-1]
-                                        asset_max = asset_new if asset_new > asset_last_max else asset_last_max
-
-                                    df_s = pd.DataFrame.from_records(stats_history)
-                                    b_symbol = abs(tp_price - et_price) / abs(
-                                        sl_price - et_price)  # one trade profitlose rate
-
-                                    b_cum = (df_s[8].sum() + b_symbol) / (
-                                            len(df_s) + 1) if len(
-                                        stats_history) > 0 else b_symbol  # mean - profitlose rate, df_s[6] b_cum index
-                                    p_cum = winrate / 100  # win rate
-                                    q_cum = 1 - p_cum  # lose rate
-                                    tpi_cum = round(p_cum * (1 + b_cum), 2)  # trading perfomance index
-                                    f_cum = round(p_cum - (q_cum / b_cum),
-                                                  2)  # kelly index https://igotit.tistory.com/1526
-
-                                    f = f_cum
-                                    tpi = tpi_cum
-                                    b = b_cum
-
-                                    if c_kelly_adaptive:
-                                        if len(df_s) >= c_kelly_window:
-                                            df_s_window = df_s.iloc[-c_kelly_window:]
-                                            p = df_s_window[4].sum() / len(df_s_window)
-                                            b = (df_s_window[11].sum() + b_symbol) / (len(
-                                                df_s_window) + 1)  # mean in kelly window - profitlose rate
-                                            q = 1 - p  # lose rate
-                                            tpi = round(p * (1 + b),
-                                                        2)  # trading perfomance index
-                                            f = round(p - (q / b), 2)  # kelly index
-
-                                    trade_stats = [len(trade_count), round(winrate, 2),
-                                                   asset_new, symbol, win_lose_flg,
-                                                   'WIN' if win_lose_flg else 'LOSE', f_cum,
-                                                   tpi_cum, b_cum, f, tpi, b, b_symbol,
-                                                   str(qtyrate_k),
-                                                   str(round(pnl_percent, 4)),
-                                                   sum(pnl_history), sum(fee_history),
-                                                   round(asset_min, 2), round(asset_max, 2)]
-                                    stats_history.append(trade_stats)
-                                    t_info = [stats_history, order_history,
-                                              asset_history, trade_count, fee_history,
-                                              pnl_history, wavepattern_history]
-
-                                    wavepattern_tpsl_l.append(
-                                        [ix, wavepattern.dates[0], id(wavepattern),
-                                         wavepattern])
-
-                                    if True:
-                                        # if w2_rate > 0.9:
-                                        s_11 = symbol + '           '
-                                        trade_in = trade_inout_i[4][2:-3]
-                                        trade_out = trade_inout_i[5][6:-3]
-                                        logger.info(
-                                            '%s %s %s %s %s x%s %s-%s %s %s %s %s %s %s - %s' % (
-                                                str(qtyrate_k), str(
-                                                    c_compare_before_fractal_mode) + ' :shift=' + str(
-                                                    c_compare_before_fractal_shift),
-                                                timeframe, s_11[:11], tf, qtyrate_k,
-                                                period_days_ago, period_days_ago_till, ' x ' + str(fc),
-                                                'L' if longshort else 'S', trade_in, '-',
-                                                trade_out, str(trade_stats),
-                                                str([et_price, sl_price, tp_price, tp_price_w5])))
-
-                        if plotview:
-                            t = tf + '_' + str(i) + ':' + str(wave_opt.values) + ' ' + str(t_info[0][-1] if t_info[0] else [])
-                            plot_pattern_n(df=df, wave_pattern=wavepattern_tpsl_l,
+                        if c_current_price_in_zone_by_prices_k_close(symbol, longshort, et_price, tp_price, close):
+                            plot_pattern_k(
+                                           symbol+'_'+str(tf)+'_'+str(fc),
+                                           df=df,
+                                           w=w,
+                                           k=k,
+                                           wave_pattern=[[ix, w.dates[0], id(w), w]],
                                            df_lows_plot=df_lows_plot,
                                            df_highs_plot=df_highs_plot,
-                                           trade_info=t_info,
+                                           # trade_info=t_info,
                                            wave_options=wave_option_plot_l,
-                                           title='tpsl_%s_' % str(fc) + t + ' %s' % str(
-                                               c_compare_before_fractal_mode))
+                                           title='B ET/test_trade %s' % str([symbol, et_price, sl_price, tp_price, dates[k]]))
+                            r_order, o_his = new_et_order_test(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price, tp_price, tp_price_w5, 1, w, et_orderid_test, o_his, t_mode)
+
+                            et_exec_flg = True
+                    else:
+                        if not c_current_price_in_zone_by_prices_k_close(symbol, longshort, et_price, tp_price, close):
+                            o_his = delete_history_status(o_his, symbol, et_orderid_test, 'CANCEL')
+                            et_exec_flg = False
+
+            c_positioning = (
+                    position is False
+                    and et_price >= detrends[k] > sl_price) if longshort else (
+                    position is False and et_price <= detrends[k] < sl_price
+            )
+            c_profit = (position and trends[k] >= tp_price) if longshort else (position and trends[k] <= tp_price)
+            c_stoploss = (position and detrends[k] <= sl_price) if longshort else (position and detrends[k] >= sl_price)
+            c_stoploss_direct = (detrends[k] <= sl_price and trends[k] >= et_price) if longshort else (
+                        detrends[k] >= sl_price and trends[k] <= et_price)
+
+            if c_stoploss_direct:
+                position = True
+                c_stoploss = True
+                position_enter_i = [symbol, et_price, sl_price, tp_price, dates[k]]
+
+                logger.info('c_stoplost_direct')
+
+                # if plotview:
+                #     plot_pattern_k(
+                #                     symbol + '_' + str(tf) + '_' + str(fc),
+                #                     df=df,
+                #                     w=w,
+                #                     k=k,
+                #                     wave_pattern=[[ix, w.dates[0], id(w), w]],
+                #                     df_lows_plot=df_lows_plot,
+                #                     df_highs_plot=df_highs_plot,
+                #                     # trade_info=t_info,
+                #                     wave_options=wave_option_plot_l,
+                #                     title='BACKTEST ET POSITION (DIRECT) %s' % str(position_enter_i))
+
+            elif position is False and c_positioning:
+                position = True
+                position_enter_i = [symbol, et_price, sl_price, tp_price, dates[k]]
+
+                # if plotview:
+                #     plot_pattern_k(
+                #         symbol + '_' + str(tf) + '_' + str(fc),
+                #         df=df,
+                #         w=w,
+                #         k=k,
+                #         wave_pattern=[[ix, w.dates[0], id(w), w]],
+                #         df_lows_plot=df_lows_plot,
+                #         df_highs_plot=df_highs_plot,
+                #         # trade_info=t_info,
+                #         wave_options=wave_option_plot_l,
+                #         title='BACKTEST  ET POSITION  %s' % str(position_enter_i))
+
+
+            if position is True:
+                if c_profit or c_stoploss:
+                    if t_mode in ['BACKTEST']:
+                        r_order, o_his = new_et_order_test(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price,
+                                                           tp_price, tp_price_w5, 1, w, et_orderid_test, o_his, t_mode)
+
+                    fee_limit_tp = 0
+                    if tp_type == 'maker':
+                        fee_limit_tp = (fee_limit + fee_tp) * qtyrate_k
+                    elif tp_type == 'taker':
+                        fee_limit_tp = (fee_limit + fee_tp + fee_slippage) * qtyrate_k
+                    fee_limit_sl = (fee_limit + fee_sl + fee_slippage) * qtyrate_k
+
+                    fee_percent = 0
+                    pnl_percent = 0
+                    win_lose_flg = 0
+                    if c_stoploss:
+                        win_lose_flg = 0
+                        pnl_percent = -(abs(
+                            et_price - sl_price) / et_price) * qtyrate_k
+                        fee_percent = fee_limit_sl
+                        trade_count.append(0)
+                        trade_inout_i = [position_enter_i[0],
+                                         position_enter_i[1],
+                                         position_enter_i[2],
+                                         position_enter_i[3],
+                                         position_enter_i[4], dates[k],
+                                         longshort, 'LOSE']
+                        order_history.append(trade_inout_i)
+                        o_his = update_history_status(o_his, symbol, et_orderid_test, 'LOSE')
+
+                    if c_profit:
+                        win_lose_flg = 1
+                        pnl_percent = (abs(
+                            tp_price - et_price) / et_price) * qtyrate_k
+                        fee_percent = fee_limit_tp
+                        trade_count.append(1)
+                        trade_inout_i = [position_enter_i[0],
+                                         position_enter_i[1],
+                                         position_enter_i[2],
+                                         position_enter_i[3],
+                                         position_enter_i[4], dates[k],
+                                         longshort, 'WIN']
+                        order_history.append(trade_inout_i)
+                        o_his = update_history_status(o_his, symbol, et_orderid_test, 'WIN')
+
+                    asset_history_pre = asset_history[-1] if asset_history else seed
+                    asset_new = asset_history_pre * (1 + pnl_percent - fee_percent)
+                    pnl_history.append(asset_history_pre * pnl_percent)
+                    fee_history.append(asset_history_pre * fee_percent)
+                    asset_history.append(asset_new)
+                    wavepattern_history.append(w)
+
+                    winrate = (sum(trade_count) / len(trade_count)) * 100
+
+                    asset_min = seed
+                    asset_max = seed
+
+                    if len(stats_history) > 0:
+                        asset_last_min = stats_history[-1][-2]
+                        asset_min = asset_new if asset_new < asset_last_min else asset_last_min
+                        asset_last_max = stats_history[-1][-1]
+                        asset_max = asset_new if asset_new > asset_last_max else asset_last_max
+
+                    df_s = pd.DataFrame.from_records(stats_history)
+                    b_symbol = abs(tp_price - et_price) / abs(
+                        sl_price - et_price)  # one trade profitlose rate
+
+                    b_cum = (df_s[8].sum() + b_symbol) / (
+                            len(df_s) + 1) if len(
+                        stats_history) > 0 else b_symbol  # mean - profitlose rate, df_s[6] b_cum index
+                    p_cum = winrate / 100  # win rate
+                    q_cum = 1 - p_cum  # lose rate
+                    tpi_cum = round(p_cum * (1 + b_cum), 2)  # trading perfomance index
+                    f_cum = round(p_cum - (q_cum / b_cum),
+                                  2)  # kelly index https://igotit.tistory.com/1526
+
+                    f = f_cum
+                    tpi = tpi_cum
+                    b = b_cum
+
+                    if c_kelly_adaptive:
+                        if len(df_s) >= c_kelly_window:
+                            df_s_window = df_s.iloc[-c_kelly_window:]
+                            p = df_s_window[4].sum() / len(df_s_window)
+                            b = (df_s_window[11].sum() + b_symbol) / (len(
+                                df_s_window) + 1)  # mean in kelly window - profitlose rate
+                            q = 1 - p  # lose rate
+                            tpi = round(p * (1 + b),
+                                        2)  # trading perfomance index
+                            f = round(p - (q / b), 2)  # kelly index
+
+                    trade_stats = [len(trade_count), round(winrate, 2),
+                                   asset_new, symbol, win_lose_flg,
+                                   'WIN' if win_lose_flg else 'LOSE', f_cum,
+                                   tpi_cum, b_cum, f, tpi, b, b_symbol,
+                                   str(qtyrate_k),
+                                   str(round(pnl_percent, 4)),
+                                   sum(pnl_history), sum(fee_history),
+                                   round(asset_min, 2), round(asset_max, 2)]
+                    stats_history.append(trade_stats)
+                    t_info = [stats_history, order_history,
+                              asset_history, trade_count, fee_history,
+                              pnl_history, wavepattern_history]
+
+                    wavepattern_tpsl_l.append(
+                        [ix, w.dates[0], id(w), w])
+
+                    s_11 = symbol + '           '
+                    trade_in = trade_inout_i[4][2:-3]
+                    trade_out = trade_inout_i[5][6:-3]
+
+                    trade_stats_print = [len(trade_count), round(winrate, 2),
+                                   asset_new, symbol, win_lose_flg,
+                                   'WIN' if win_lose_flg else 'LOSE', f_cum,
+                                   # tpi_cum, b_cum, f, tpi, b, b_symbol,
+                                   str(qtyrate_k),
+                                   str(round(pnl_percent, 4)),
+                                   sum(pnl_history), sum(fee_history),
+                                   round(asset_min, 2), round(asset_max, 2)]
+                    logger.info(
+                        '%s %s %s %s x%s %s-%s %s %s %s %s %s %s - %s' % (t_mode[:1] + ' :',
+                            timeframe, s_11[:11], tf, qtyrate_k,
+                            period_days_ago, period_days_ago_till, ' x ' + str(fc),
+                            'L' if longshort else 'S', trade_in, '-',
+                            trade_out, str(trade_stats_print),
+                            str([et_price, sl_price, tp_price, tp_price_w5])))
+
+                    if plotview:
+                        plot_pattern_k(
+                            symbol + '_' + str(tf) + '_' + str(fc),
+                            df=df,
+                            w=w,
+                            k=k,
+                            wave_pattern=wavepattern_tpsl_l,
+                            df_lows_plot=df_lows_plot,
+                            df_highs_plot=df_highs_plot,
+                            trade_info=t_info,
+                            wave_options=wave_option_plot_l,
+                            title='BACKTEST TP/SL ' + str(trade_stats) + ' ' +
+                            str([et_price, sl_price, tp_price, tp_price_w5]))
+                    break
+    return t_info, o_his
+
+
+def monitor_wave_and_action(symbol_p, tf_p, t_mode, t_info, o_his, i=None):
+    wave_list = get_waves(symbol_p, tf_p, t_info, t_mode, i=i)
+    if wave_list:
+        wavepatterns = set()
+        wavepattern_tpsl_l = []
+        wave_option_plot_l = []
+        for wave in wave_list:
+            symbol = wave[0]
+            df = wave[1]
+            tf = wave[2]
+            fc = wave[3]
+            longshort = wave[4]
+            w = wave[5]
+            ix = wave[6]
+            wave_opt = wave[7]
+            df_lows_plot = wave[8]
+            df_highs_plot = wave[9]
+            et_price, sl_price, tp_price, tp_price_w5 = get_trade_prices(o_his, symbol, longshort, w, t_mode)
+            if c_check_valid_wave_in_history(o_his, symbol, tf, fc, w, et_price, sl_price, tp_price, tp_price_w5, t_mode):
+                if check_cons_for_new_etsl_order(o_his, df, symbol, tf, fc, longshort, w, et_price, sl_price, tp_price, tp_price_w5, ix, t_mode, t_info, qtyrate):
+                    if t_mode in ['REAL']:
+                        t_info, o_his = real_trade(symbol, tf, fc, longshort, et_price, sl_price, tp_price, tp_price_w5, w, t_mode, o_his, df_lows_plot, df_highs_plot, df, t_info)
+                    elif t_mode in ['PAPER']:
+                        t_info, o_his = test_trade(symbol, tf, fc, longshort, et_price, sl_price, tp_price, tp_price_w5, w,
+                                                   t_mode, o_his, df_lows_plot, df_highs_plot, wavepatterns,
+                                                   wavepattern_tpsl_l, wave_option_plot_l, wave_opt, ix, df, t_info)
+                        t_info, o_his = real_trade(symbol, tf, fc, longshort, et_price, sl_price, tp_price, tp_price_w5, w,
+                                                   t_mode, o_his, df_lows_plot, df_highs_plot, df, t_info)
+                    elif t_mode in ['BACKTEST']:
+                        t_info, o_his = test_trade(symbol, tf, fc, longshort, et_price, sl_price, tp_price, tp_price_w5, w, t_mode, o_his, df_lows_plot, df_highs_plot, wavepatterns, wavepattern_tpsl_l, wave_option_plot_l, wave_opt, ix, df, t_info)
+
     return t_info, o_his
 
 
 def add_etsl_history(o_his, symbol, tf, fc, longshort, qtyrate_k, w, et_price, sl_price, tp_price,
-                     tp_price_w5, quantity, et_orderId_p, sl_orderId, order_et, order_sl, run_mode):
+                     tp_price_w5, quantity, et_orderId_p, sl_orderId, order_et, order_sl, t_mode):
     now = dt.datetime.now()
     history = {
+        'trade_mode': t_mode,
+        'symbol': symbol,
         'id': et_orderId_p,
         'create_datetime': now,
         'status': 'ETSL',
-        'symbol': symbol,
         'timeframe': tf,
         'fcnt': fc,
         'qtyrate_k': qtyrate_k,
@@ -1541,9 +1655,10 @@ def add_etsl_history(o_his, symbol, tf, fc, longshort, qtyrate_k, w, et_price, s
         'tp_data': None
     }
     o_his.append(history)
-    if run_mode == 'REAL':
-        logger.info(symbol + ' _HS add_etsl_history %s:' % 'ETSL' + str(history))
-    elif run_mode == 'BACKTEST':
+    if t_mode in ['REAL', 'PAPER']:
+        logger.info(t_mode + ' : ' + symbol + ' _HS add_etsl_history %s:' % 'ETSL' + str(history))
+    elif t_mode in ['BACKTEST']:
+        # logger.info(t_mode + ' : ' + symbol + ' _HS add_etsl_history %s:' % 'ETSL' + str(history))
         pass
     # dump_history_pkl()
     return o_his
@@ -1722,7 +1837,7 @@ def update_trade_info(t_info, c_profit, c_stoploss, o_his, symbol, h_id):
                         tpi = round(p * (1 + b), 2)  # trading perfomance index
                         f = round(p - (q / b), 2)  # kelly index
 
-                # current_price = float(api_call('ticker_price', ['BNBUSDT'])['price'])
+                # c_price = float(api_call('ticker_price', ['BNBUSDT'])['price'])
 
                 trade_stats = [len(trade_count), round(winrate, 2), asset_new, symbol, win_lose_flg,
                                'WIN' if win_lose_flg else 'LOSE', f_cum, tpi_cum, b_cum, f, tpi, b, b_symbol,
@@ -1817,20 +1932,23 @@ def get_account_trades(symbol, et_orderId, sl_orderId, tp_orderId):
     return df, pnl, commission
 
 
-def get_order_history_etsl_and_new_tp_order(o_his, symbol, run_mode, et_orderId_p):
+def get_order_history_etsl_and_new_tp_order(o_his, symbol, et_orderId_p, t_mode):
     if o_his:
-        history_new = [x for x in o_his if (x['et_orderId'] == et_orderId_p and x['symbol'] == symbol and x['status'] == 'ETSL')]
+        history_new = [x for x in o_his if (x['et_orderId'] == et_orderId_p
+                                            and x['symbol'] == symbol
+                                            and x['trade_mode'] == t_mode
+                                            and x['status'] == 'ETSL')]
         for new in history_new:
+            symbol = new['symbol']
             et_orderId = new['et_orderId']
             sl_orderId = new['sl_orderId']
-            et_price = new['et_price']
             tp_price = new['tp_price']
             tf = new['timeframe']
             longshort = new['longshort']
             quantity = new['quantity']
             fc = new['fcnt']
 
-            if run_mode == 'REAL':
+            if t_mode  == 'REAL':
                 r_get_open_orders_et = api_call('get_open_orders', [symbol, et_orderId])
                 r_get_open_orders_et_flg = True if r_get_open_orders_et else False
                 r_query_et = api_call('query_order', [symbol, et_orderId])
@@ -1841,18 +1959,20 @@ def get_order_history_etsl_and_new_tp_order(o_his, symbol, run_mode, et_orderId_
 
                 if r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is True and r_query_et['status'] == 'FILLED' and r_query_sl['status'] == 'NEW':
                     # NEW_TP
-                    _, o_his = new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId, run_mode, o_his)
-            elif run_mode == 'BACKTEST':
+                    _, o_his = new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId, t_mode, o_his)
+            elif t_mode == 'BACKTEST':
                 try:
-                    _, o_his = new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId_p, run_mode, o_his)
+                    _, o_his = new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId_p, t_mode, o_his)
                 except Exception as e:
                     print('get_order_history_etsl_and_new_tp_order e: %s' % str(e))
     return o_his
 
 
-def monitor_history_and_action(symbol, r_mode, t_info, o_his):
+def monitor_history_and_action(symbol, t_mode, t_info, o_his):
     if o_his:
-        history_new = [x for x in o_his if (x['symbol'] == symbol and x['status'] == 'ETSL')]
+        history_new = [x for x in o_his if (x['symbol'] == symbol
+                                            and x['trade_mode'] == t_mode
+                                            and x['status'] == 'ETSL')]
         if history_new:
             for new in history_new:
                 et_orderId = new['et_orderId']
@@ -1874,7 +1994,7 @@ def monitor_history_and_action(symbol, r_mode, t_info, o_his):
 
                 if r_get_open_orders_et_flg is True and r_get_open_orders_sl_flg is True and r_query_et[
                     'status'] == 'NEW' and r_query_sl['status'] == 'NEW':
-                    if not c_currentprice_in_zone_by_prices(symbol, longshort, float(et_price), float(tp_price)):
+                    if not c_current_price_in_zone_by_prices(symbol, longshort, float(et_price), float(tp_price)):
                         # CANCEL_ETSL
                         response_cancel = cancel_batch_order(symbol, [str(et_orderId), str(sl_orderId)], 'CANCEL ETSL')
                         if response_cancel:
@@ -1882,20 +2002,20 @@ def monitor_history_and_action(symbol, r_mode, t_info, o_his):
                 elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is True and r_query_et[
                     'status'] == 'FILLED' and r_query_sl['status'] == 'NEW':
                     # NEW_TP
-                    _, o_his = new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId, run_mode, o_his)
+                    _, o_his = new_tp_order(symbol, tf, fc, longshort, tp_price, quantity, et_orderId, t_mode, o_his)
                 elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is False and r_query_et[
                     'status'] == 'FILLED' and r_query_sl['status'] == 'FILLED':
-                    o_his = update_history_status(o_his, symbol, et_orderId, 'LOSE', o_his)
+                    o_his = update_history_status(o_his, symbol, et_orderId, 'LOSE')
                     logger.info(symbol + ' IN ETSLETSL Ooooooooooo  ESSL DIRECT LOSE  OOOOOoooOOOOOoooOOOO')
 
                 elif r_get_open_orders_et_flg is True and r_get_open_orders_sl_flg is False and r_query_et[
                     'status'] == 'NEW' and r_query_sl['status'] == 'CANCELED':
                     cancel_batch_order(symbol, [et_orderId], 'FORCE CLICK SL IN ETSL, REMAIN ET CLEAR')
-                    o_his = delete_history_status(o_his, symbol, et_orderId, 'CANCEL', o_his)
+                    o_his = delete_history_status(o_his, symbol, et_orderId, 'CANCEL')
                 elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is True and r_query_et[
                     'status'] == 'CANCELED' and r_query_sl['status'] == 'NEW':
                     cancel_batch_order(symbol, [sl_orderId], 'FORCE CLICK ET IN ETSL, REMAIN SL CLEAR')
-                    o_his = delete_history_status(o_his, symbol, et_orderId, 'CANCEL', o_his)
+                    o_his = delete_history_status(o_his, symbol, et_orderId, 'CANCEL')
 
 
                 elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is False and r_query_et[
@@ -1904,8 +2024,7 @@ def monitor_history_and_action(symbol, r_mode, t_info, o_his):
                     if rt is not None:
                         logger.info(symbol + ' IN ETSLETSL Ooooooooooo  AFTER FORCE SL CLICK, REMAIN TP FILLED AND CLOSE POSI ET OOOOOoooOOOOOoooOOOO' + str(
                                 rt))
-                        o_his = update_history_status(o_his, symbol, et_orderId, 'TP',
-                                                          o_his)  # TODO check win or lose
+                        o_his = update_history_status(o_his, symbol, et_orderId, 'TP')  # TODO check win or lose
                     else:
                         logger.info(symbol + ' IN ETSLETSL Ooooooooooo  AFTER FORCE SL CLICK, REMAIN TP FILLED AND CLOSE POSI ET FAIL ERROR OOOOOoooOOOOOoooOOOO' + str(
                                 rt))
@@ -1913,11 +2032,11 @@ def monitor_history_and_action(symbol, r_mode, t_info, o_his):
                 elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is True and r_query_et[
                     'status'] == 'NEW' and r_query_sl['status'] == 'CANCELED':
                     cancel_batch_order(symbol, [sl_orderId], 'FORCE MARKET CLICK IN ETSL, REMAIN SL CLEAR')
-                    o_his = delete_history_status(o_his, symbol, et_orderId, 'CANCEL', o_his)
+                    o_his = delete_history_status(o_his, symbol, et_orderId, 'CANCEL')
 
                 elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is False and r_query_et[
                     'status'] == 'CANCELED' and r_query_sl['status'] == 'CANCELED':
-                    o_his = delete_history_status(o_his, symbol, et_orderId, 'CANCEL', o_his)
+                    o_his = delete_history_status(o_his, symbol, et_orderId, 'CANCEL')
                     logger.info(symbol + ' IN ETSLETSL OooooooooooOOO    TWO ET AND SL ARE CANCELED OOoooOOOOOoooOOOO')
 
                 elif r_get_open_orders_et_flg is True and r_get_open_orders_sl_flg is True and r_query_et[
@@ -1929,8 +2048,7 @@ def monitor_history_and_action(symbol, r_mode, t_info, o_his):
 
                 elif r_get_open_orders_et_flg is False and r_get_open_orders_sl_flg is False and r_query_et[
                     'status'] == 'FILLED' and r_query_sl['status'] == 'EXPIRED':
-                    o_his = update_history_status(o_his, symbol, et_orderId, 'FORCE',
-                                                      o_his)  # TWO ET AND SL ARE CANCELED
+                    o_his = update_history_status(o_his, symbol, et_orderId, 'FORCE')  # TWO ET AND SL ARE CANCELED
                     logger.info(symbol + ' IN ETSLETSL ET:FILLED and SL:EXPIRED monitoring_orders_positions ' + str(rt))
 
                 else:
@@ -1939,7 +2057,9 @@ def monitor_history_and_action(symbol, r_mode, t_info, o_his):
                         symbol, str(r_get_open_orders_et_flg), str(r_get_open_orders_sl_flg), str(r_query_et['status']),
                         str(r_query_sl['status'])))
 
-        history_tp = [x for x in o_his if (x['symbol'] == symbol and x['status'] == 'TP')]
+        history_tp = [x for x in o_his if (x['symbol'] == symbol
+                                           and x['trade_mode'] == t_mode
+                                           and x['status'] == 'TP')]
         if history_tp:
             for tp in history_tp:
                 et_orderId = tp['et_orderId']
@@ -1972,14 +2092,14 @@ def monitor_history_and_action(symbol, r_mode, t_info, o_his):
                     'status'] == 'FILLED' and r_query_sl['status'] == 'NEW':
                     cancel_batch_order(symbol, [sl_orderId], 'AUTO TP FILLED, REMAIN SL CLEAR')
                     t_info = update_trade_info(t_info, True, False, o_his, symbol, int(et_orderId))
-                    o_his = update_history_status(o_his, symbol, et_orderId, 'WIN', o_his)  # AUTO TP FILLED
+                    o_his = update_history_status(o_his, symbol, et_orderId, 'WIN')  # AUTO TP FILLED
 
                     df_t, realizedPnl_tot, commission_tot = get_account_trades(symbol, et_orderId, None, tp_orderId)
                     logger.info(str([symbol, int(et_orderId), df_t, realizedPnl_tot, commission_tot]))
 
                 elif r_query_tp['status'] == 'FILLED' and r_query_sl['status'] == 'EXPIRED':
                     t_info = update_trade_info(t_info, True, False, o_his, symbol, int(et_orderId))
-                    o_his = update_history_status(o_his, symbol, et_orderId, 'WIN', o_his)  # AUTO TP FILLED
+                    o_his = update_history_status(o_his, symbol, et_orderId, 'WIN')  # AUTO TP FILLED
                     df_t, realizedPnl_tot, commission_tot = get_account_trades(symbol, et_orderId, None, tp_orderId)
                     logger.info(str([symbol, int(et_orderId), df_t, realizedPnl_tot, commission_tot]))
 
@@ -1987,7 +2107,7 @@ def monitor_history_and_action(symbol, r_mode, t_info, o_his):
                     'status'] == 'EXPIRED' and r_query_sl['status'] == 'FILLED':
                     # cancel_batch_order(symbol, [tp_orderId], 'AUTO SL FILLED, REMAIN TP CLEAR')
                     t_info = update_trade_info(t_info, False, True, o_his, symbol, int(et_orderId))
-                    o_his = update_history_status(o_his, symbol, et_orderId, 'LOSE', o_his)  # AUTO SL FILLED
+                    o_his = update_history_status(o_his, symbol, et_orderId, 'LOSE')  # AUTO SL FILLED
                     df_t, realizedPnl_tot, commission_tot = get_account_trades(symbol, et_orderId, sl_orderId, None)
                     logger.info(str([symbol, int(et_orderId), df_t, realizedPnl_tot, commission_tot]))
 
@@ -1998,7 +2118,7 @@ def monitor_history_and_action(symbol, r_mode, t_info, o_his):
                         str(r_query_sl['status'])))
 
                     t_info = update_trade_info(t_info, False, True, o_his, symbol, int(et_orderId))
-                    o_his = update_history_status(o_his, symbol, et_orderId, 'LOSE', o_his)  # AUTO SL FILLED
+                    o_his = update_history_status(o_his, symbol, et_orderId, 'LOSE')  # AUTO SL FILLED
                     df_t, realizedPnl_tot, commission_tot = get_account_trades(symbol, et_orderId, sl_orderId, None)
                     logger.info(str([symbol, int(et_orderId), df_t, realizedPnl_tot, commission_tot]))
 
@@ -2009,7 +2129,7 @@ def monitor_history_and_action(symbol, r_mode, t_info, o_his):
                     logger.info('IN TPTP FILLED FILLED: %s %s %s %s %s ' % (
                         symbol, str(r_get_open_orders_tp_flg), str(r_get_open_orders_sl_flg), str(r_query_tp['status']),
                         str(r_query_sl['status'])))
-                    o_his = update_history_status(o_his, symbol, et_orderId, 'FORCE', o_his)  # AUTO TP FILLED  # TODO check win or lose
+                    o_his = update_history_status(o_his, symbol, et_orderId, 'FORCE')  # AUTO TP FILLED  # TODO check win or lose
 
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp[
                     'status'] == 'NEW' and r_query_sl['status'] == 'NEW':
@@ -2018,16 +2138,16 @@ def monitor_history_and_action(symbol, r_mode, t_info, o_his):
                         str(r_query_sl['status'])))
                     cancel_batch_order(symbol, [tp_orderId], 'FORCE MARKET CLICK, REMAIN TP CLEAR')
                     cancel_batch_order(symbol, [sl_orderId], 'FORCE MARKET CLICK, REMAIN SL CLEAR')
-                    o_his = update_history_status(o_his, symbol, et_orderId, 'FORCE', o_his)  # TODO check win or lose
+                    o_his = update_history_status(o_his, symbol, et_orderId, 'FORCE')  # TODO check win or lose
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp[
                     'status'] == 'EXPIRED' and r_query_sl['status'] == 'NEW':
                     cancel_batch_order(symbol, [sl_orderId], 'FORCE MARKET CLICK AND TIME PASSED, REMAIN SL CLEAR')
-                    o_his = update_history_status(o_his, symbol, et_orderId, 'FORCE', o_his)  # TODO check win or lose
+                    o_his = update_history_status(o_his, symbol, et_orderId, 'FORCE')  # TODO check win or lose
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is True and r_query_tp[
                     'status'] == 'CANCELED' and r_query_sl['status'] == 'NEW':
                     close_position_by_symbol(symbol, quantity, longshort, et_orderId)  # FORCE TP CLICK, REMAIN SL CLEAR
                     cancel_batch_order(symbol, [sl_orderId], 'FORCE TP CLICK, REMAIN SL CLEAR')
-                    o_his = update_history_status(o_his, symbol, et_orderId, 'FORCE', o_his)  # TODO check win or lose
+                    o_his = update_history_status(o_his, symbol, et_orderId, 'FORCE')  # TODO check win or lose
 
                 elif r_get_open_orders_tp_flg is False and r_get_open_orders_sl_flg is False and r_query_tp[
                     'status'] == 'CANCELED' and r_query_sl['status'] == 'CANCELED':
@@ -2035,18 +2155,18 @@ def monitor_history_and_action(symbol, r_mode, t_info, o_his):
                     logger.info('IN TPTP CANCELED CANCELED : %s %s %s %s %s ' % (
                         symbol, str(r_get_open_orders_tp_flg), str(r_get_open_orders_sl_flg), str(r_query_tp['status']),
                         str(r_query_sl['status'])))
-                    o_his = update_history_status(o_his, symbol, et_orderId, 'FORCE', o_his)  # TODO check win or lose
+                    o_his = update_history_status(o_his, symbol, et_orderId, 'FORCE')  # TODO check win or lose
 
                 elif r_get_open_orders_tp_flg is True and r_get_open_orders_sl_flg is True and r_query_tp[
                     'status'] == 'NEW' and r_query_sl['status'] == 'CANCELED':
                     close_position_by_symbol(symbol, quantity, longshort, et_orderId)  # FORCE SL, BEFORE CHECK TP CHEKER
                     cancel_batch_order(symbol, [tp_orderId], 'FORCE SL CLICK, REMAIN SL CLEAR')
-                    o_his = update_history_status(o_his, symbol, et_orderId, 'FORCE', o_his)  # TODO check win or lose
+                    o_his = update_history_status(o_his, symbol, et_orderId, 'FORCE')  # TODO check win or lose
                 elif r_get_open_orders_tp_flg is True and r_get_open_orders_sl_flg is False and r_query_tp[
                     'status'] == 'NEW' and r_query_sl['status'] == 'CANCELED':
                     close_position_by_symbol(symbol, quantity, longshort, et_orderId)  # FORCE SL AFTER CHECK TP CHEKER
                     cancel_batch_order(symbol, [tp_orderId], 'FORCE SL CLICK, REMAIN SL CLEAR')
-                    o_his = update_history_status(o_his, symbol, et_orderId, 'FORCE', o_his)  # TODO check win or lose
+                    o_his = update_history_status(o_his, symbol, et_orderId, 'FORCE')  # TODO check win or lose
 
                 else:
                     logger.info(symbol + ' IN TPTP OooooooooooOOOOOoooOOOOOTTTTTPPPPPPoooOOOO')
@@ -2056,32 +2176,34 @@ def monitor_history_and_action(symbol, r_mode, t_info, o_his):
     return t_info, o_his
 
 
-def get_symbols_in_order_position(o_his):
+def get_symbols_in_order_position(o_his, t_mode):
     symbols_filter = list()
     if o_his:
-        symbols_filter = [x['symbol'] for x in o_his if x['status'] in ['ETSL', 'TP']]
+        symbols_filter = [x['symbol'] for x in o_his if x['status'] in ['ETSL', 'TP']
+                          and x['trade_mode'] == t_mode
+                          ]
         symbols_filter = list(set(symbols_filter))
     return symbols_filter
 
 
-def single(symbol_list, r_mode, t_info, o_his, *args):
+def single(symbol_list, t_mode, t_info, o_his, *args):
     roof_cnt = 1
     logger.info(f'{roof_cnt} in monitor_wave_and_action: {time.strftime("%H:%M:%S")}')
     for symbol in symbol_list:
         for tf in timeframe:
             try:
-                t_info, o_his = monitor_wave_and_action(symbol, tf, r_mode, t_info, o_his, i=1)
+                t_info, o_his = monitor_wave_and_action(symbol, tf, t_mode, t_info, o_his, i=i)
             except Exception as e:
                 print('monitor_wave_and_action: %s' % str(e))
                 logger.error('monitor_wave_and_action: %s' % str(e))
 
-        if r_mode == 'REAL':
+        if t_mode in ['REAL']:
             if roof_cnt % 20 == 0:
                 logger.info(f'{roof_cnt} in monitor_history_and_action: {time.strftime("%H:%M:%S")}')
                 try:
-                    symbol_l = get_symbols_in_order_position(o_his)
+                    symbol_l = get_symbols_in_order_position(o_his, trade_mode)
                     for sym in symbol_l:
-                        t_info, o_his = monitor_history_and_action(sym, r_mode, t_info, o_his)
+                        t_info, o_his = monitor_history_and_action(sym, t_mode, t_info, o_his)
                 except Exception as e:
                     print('monitor_history_and_action: %s' % str(e))
                     logger.error('monitor_history_and_action: %s' % str(e))
@@ -2254,12 +2376,14 @@ if __name__ == '__main__':
       | |_ __ __ _  __| |_ _ __   __ _  | |_/ / ___ | |_
       | | '__/ _` |/ _` | | '_ \ / _` | | ___ \/ _ \| __|
       | | | | (_| | (_| | | | | | (_| | | |_/ / (_) | |_
-      \_/_|  \__,_|\__,_|_|_| |_|\__, | \____/ \___/ \__| %s %s
+      \_/_|  \__,_|\__,_|_|_| |_|\__, | \____/ \___/ \__| %s %s %s
                                   __/ |
                                  |___/
+    %s  
+    """ % (version, descrition, trade_mode, trade_mode * 16))
 
-    """ % (version, descrition))
     print_condition()
+    logger.info(trade_mode * 16)
     message_bot_main(botfather_token)
 
     if reset_leverage:
@@ -2280,19 +2404,19 @@ if __name__ == '__main__':
     trade_info = [stats_history, order_history, asset_history, trade_count, fee_history, pnl_history,
                   wavepattern_history]
 
-    if run_mode == 'REAL':
+    if trade_mode in ['REAL', 'PAPER']:
         i = 1
         while True:
             # if i % 10 == 1:
             logger.info(f'{i} start: {time.strftime("%H:%M:%S")}')
-            trade_info, open_order_history = single(symbols, run_mode, trade_info, open_order_history, i)
+            trade_info, open_order_history = single(symbols, trade_mode, trade_info, open_order_history, i)
             i += 1
-    elif run_mode == 'BACKTEST':
+    elif trade_mode in ['BACKTEST']:
         mdd = None
         r = range(period_days_ago, period_days_ago_till, -1 * period_interval)
         for i in r:
             asset_history_pre = trade_info[2][-1] if trade_info[2] else seed
-            trade_info, open_order_history = single(symbols, run_mode, trade_info, open_order_history, i)
+            trade_info, open_order_history = single(symbols, trade_mode, trade_info, open_order_history, i)
             asset_history_last = trade_info[2]
             if asset_history_last:
                 mdd1 = get_mdd_1(asset_history_last)
