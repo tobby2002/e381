@@ -22,7 +22,7 @@
 
     "_period": ["period_days_ago:30 --> 30 days ago", "period_days_ago_till:0 --> now", "period_interval:1 per 1day_______  \"1m\", \"5m\""],
     "timeframe": ["3m", "5m", "15m"],
-    "period_days_ago": 10,
+    "period_days_ago": 100,
     "period_days_ago_till": 0,
     "period_interval": 1,
     "window": 720,
@@ -34,14 +34,16 @@
     "round_trip_count": 1,
     "compounding": true,
 
-    "_fractal_count": ["/21, 31, 51, 71  fibo:8, 13, /21, 34, 55, 89  ichimoku 9, /17, 26, 37, 43, 52 _____  7, 34, 52"],
+    "_fractal_count": ["/21, 31, 51, 71  fibo:8, 13, /21, 34, 55, 89  ichimoku 9, /17, 26, 37, 43, 52 _____  7, 34, 52 "],
     "_fcnt": [17, 26, 37],
     "fcnt": [17, 34, 52],
     "loop_count": 1,
     "up_to_count": 3,
     "c_same_date": true,
 
-    "c_compare_before_fractal": false,
+
+    "c_sma_n": 200,
+    "c_compare_before_fractal": true,
     "c_compare_before_fractal_strait": true,
     "c_compare_before_fractal_shift": 1,
     "c_compare_before_fractal_mode": 1,
@@ -53,8 +55,8 @@
     "krate_min": 0.20,
 
     "c_plrate_adaptive": true,
-    "c_plrate_rate": 0.50,
-    "c_plrate_rate_min": 0.30,
+    "c_plrate_rate": 0.40,
+    "c_plrate_rate_min": 0.15,
 
     "et_zone_rate": 0.7,
 
@@ -84,13 +86,13 @@
     "stop_short": 0.005,
 
     "intersect_idx": true,
-    "plotview": true,
+    "plotview": false,
     "printout": false,
     "multi_process": true,
     "seed": 100,
     "init_running_trade": false,
     "reset_leverage": false,
-    "trade_mode": "REAL",
+    "trade_mode": "BACKTEST",
     "paper_flg": true
   },
   "basic": {
