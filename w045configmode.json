@@ -92,7 +92,7 @@
     "seed": 100,
     "init_running_trade": false,
     "reset_leverage": false,
-    "trade_mode": "BACKTEST",
+    "trade_mode": "REAL",
     "paper_flg": true
   },
   "basic": {
