@@ -14,6 +14,7 @@ from binancefutures.error import ClientError
 from binance.client import Client
 from binance.helpers import round_step_size
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from tapy import Indicators
 
 import shutup;
 
@@ -70,6 +71,8 @@ timeframe = config['default']['timeframe']
 
 up_to_count = config['default']['up_to_count']
 c_same_date = config['default']['c_same_date']
+c_sma_n = config['default']['c_sma_n']
+
 c_compare_before_fractal = config['default']['c_compare_before_fractal']
 c_compare_before_fractal_strait = config['default']['c_compare_before_fractal_strait']
 if c_compare_before_fractal_strait:
@@ -78,6 +81,7 @@ c_compare_before_fractal_shift = config['default']['c_compare_before_fractal_shi
 c_compare_before_fractal_mode = config['default']['c_compare_before_fractal_mode']
 if not c_compare_before_fractal:
     c_compare_before_fractal_shift = 0
+    c_compare_before_fractal_strait = False
     c_compare_before_fractal_mode = 0
 
 c_plrate_adaptive = config['default']['c_plrate_adaptive']
@@ -178,6 +182,7 @@ def print_condition():
     logger.info('period: %s ~ %s' % (start_dt, end_dt))
     logger.info('up_to_count: %s' % up_to_count)
     logger.info('c_same_date: %s' % c_same_date)
+    logger.info('c_sma_n: %s' % c_sma_n)
     logger.info('c_compare_before_fractal: %s' % c_compare_before_fractal)
     logger.info('c_compare_before_fractal_mode: %s' % c_compare_before_fractal_mode)
     logger.info('c_compare_before_fractal_strait: %s' % c_compare_before_fractal_strait)
@@ -428,6 +433,16 @@ def get_fetch_dohlcv(symbol,
     return D
 
 
+def sma(source, period):
+    return pd.Series(source).rolling(period).mean().values
+
+
+def sma_df(df, p):
+    i = Indicators(df)
+    i.sma(period=p)
+    return i.df
+
+
 def fractals_low_loopA(df, fcnt=None, loop_count=1):
     for c in range(loop_count):
         window = 2 * fcnt + 1
@@ -436,6 +451,7 @@ def fractals_low_loopA(df, fcnt=None, loop_count=1):
         df = df.dropna()
         df = df.drop(['fractals_low'], axis=1)
     return df
+
 
 
 def fractals_high_loopA(df, fcnt=None, loop_count=1):
@@ -1122,13 +1138,19 @@ def synchronized(wrapped):
 
 
 @synchronized
-def get_historical_ohlc_data_start_end(symbol, start_int, end_int, past_days=None, interval=None, futures=False):
+def get_historical_ohlc_data_start_end(symbol, start_int, end_int, past_days=None, interval=None, futures=False, sma_n=0):
     D = None
     start_date_str = None
     end_date_str = None
     try:
         # start_date_str = str((pd.to_datetime('today') - pd.Timedelta(str(start_int) + ' days')).date())
-        start_date_str = str((pd.to_datetime('today') - pd.Timedelta(str(start_int) + ' days')).timestamp())
+        if sma_n:
+            min_trans = int(interval.replace('m', '')) * sma_n
+            # start_date_str = str((pd.to_datetime('today') - pd.Timedelta(str(start_int) + ' days')).timestamp())
+            start_date_str = str((pd.to_datetime('today') - pd.Timedelta(str(start_int) + ' days') - pd.Timedelta(str(min_trans) + ' minutes')).timestamp())
+        else:
+            start_date_str = str((pd.to_datetime('today') - pd.Timedelta(str(start_int) + ' days')).timestamp())
+
         if end_int is not None and end_int > 0:
             end_date_str = str((pd.to_datetime('today') - pd.Timedelta(str(end_int) + ' days')).timestamp())
         else:
@@ -1146,7 +1168,7 @@ def get_historical_ohlc_data_start_end(symbol, start_int, end_int, past_days=Non
 
         except Exception as e:
             time.sleep(0.1)
-            # logger.info(symbol + ' in futures_historical_klines e :' + str(e))
+            logger.info(symbol + ' in futures_historical_klines e :' + str(e))
             return D, start_date_str, end_date_str
 
         if D is not None and D.empty:
@@ -1176,13 +1198,25 @@ def get_historical_ohlc_data_start_end(symbol, start_int, end_int, past_days=Non
         D = D[new_names]
     except Exception as e:
         time.sleep(0.1)
-        # logger.info(symbol + ' in get_historical_ohlc_data_start_end e :' + str(e))
+        logger.info(symbol + ' in get_historical_ohlc_data_start_end e :' + str(e))
     return D, start_date_str, end_date_str
 
 
+def get_sma_n_df(df, n):
+    sma_n = sma_df(df, n)
+    sma_n['sma_-1'] = sma_n.sma.shift(-1).fillna(0)
+    sma_n['sma_gradient'] = sma_n.apply(lambda x: 1 if x['sma'] > x['sma_-1'] else 0, axis=1)
+    df = sma_n[n - 1:]
+    df.reset_index(drop=True, inplace=True)
+    return df
+
 def get_waves(symbol, tf, t_info, t_mode, i=None):
+    n = c_sma_n
     if t_mode in ['REAL', 'PAPER']:
-        delta = (4 * fcnt[-1] + 1)
+        if n:
+            delta = (4 * fcnt[-1] + 1) + n
+        else:
+            delta = (4 * fcnt[-1] + 1)
         df = get_fetch_dohlcv(symbol,
                               interval=tf,
                               limit=delta)
@@ -1200,11 +1234,18 @@ def get_waves(symbol, tf, t_info, t_mode, i=None):
                                                                       start_int=start_int,
                                                                       end_int=end_int,
                                                                       past_days=None,
-                                                                      interval=tf, futures=futures)
+                                                                      interval=tf,
+                                                                      futures=futures,
+                                                                      sma_n=n
+                                                                      )
     if df is not None and df.empty:
         return
     if df is None:
         return
+
+    if n:
+        df = get_sma_n_df(df, n)
+
     try:
         wa = WaveAnalyzer(df=df, verbose=True)
     except:
@@ -1223,6 +1264,10 @@ def get_waves(symbol, tf, t_info, t_mode, i=None):
             df_lows_plot = df_lows[['Date', 'Low']]
             df_lows = c_compare_before_fractal(df_lows, c_compare_before_fractal,
                                                c_compare_before_fractal_shift)
+
+            if n:
+                df_lows = df_lows[df_lows['sma_gradient'] == 1]
+
             impulse = Impulse('impulse')
             lows_idxs = df_lows.index.tolist()
             idxs = lows_idxs
@@ -1230,8 +1275,12 @@ def get_waves(symbol, tf, t_info, t_mode, i=None):
         if 'short' in type:
             df_highs = fractals_high_loopA(df, fcnt=fc, loop_count=loop_count)
             df_highs_plot = df_highs[['Date', 'High']]
-            df_lows = c_compare_before_fractal(df_lows, c_compare_before_fractal,
+            df_highs = c_compare_before_fractal(df_highs, c_compare_before_fractal,
                                                c_compare_before_fractal_shift)
+
+            if n:
+                df_highs = df_highs[df_highs['sma_gradient'] == 0]
+
             downimpulse = DownImpulse('downimpulse')
             highs_idxs = df_highs.index.tolist()
             idxs = highs_idxs
@@ -1323,12 +1372,9 @@ def test_trade(symbol, tf, fc, longshort, et_price, sl_price, tp_price, tp_price
     pnl_history = t[5]
     wavepattern_history = t[6]
 
-    # df_smaN = sma_df(df, fcnt)
-
     w_start_price = w.values[0]  # wave1
     w_end_price = w.values[-1]  # wave5
     height_price = abs(w_end_price - w_start_price)
-    o_fibo_value = height_price * o_fibo / 100 if o_fibo else 0
 
     out_price = None
 
@@ -2186,8 +2232,8 @@ def get_symbols_in_order_position(o_his, t_mode):
     return symbols_filter
 
 
-def single(symbol_list, t_mode, t_info, o_his, *args):
-    roof_cnt = 1
+def single(symbol_list, t_mode, t_info, o_his, i):
+    roof_cnt = i
     logger.info(f'{roof_cnt} in monitor_wave_and_action: {time.strftime("%H:%M:%S")}')
     for symbol in symbol_list:
         for tf in timeframe:
