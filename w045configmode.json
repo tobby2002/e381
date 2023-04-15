@@ -42,8 +42,8 @@
     "c_same_date": true,
 
 
-    "c_sma_n": 200,
-    "c_compare_before_fractal": true,
+    "c_sma_n": 0,
+    "c_compare_before_fractal": false,
     "c_compare_before_fractal_strait": true,
     "c_compare_before_fractal_shift": 1,
     "c_compare_before_fractal_mode": 1,
