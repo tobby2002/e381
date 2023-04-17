@@ -1452,6 +1452,44 @@ def real_trade_market_T(symbol, tf, fc, longshort, et_price, sl_price, tp_price,
     return t_info, o_his
 
 
+def t_fc(pre_status, sl_c, et_c, tp_c, out_c):
+    if pre_status == 0 and sl_c == 0 and et_c == 0 and tp_c == 0 and out_c == 0:  # STANDBY
+        return 0
+    elif pre_status == 0 and sl_c == 0 and et_c == 0 and out_c == 1:  # OUT
+        return -1
+    elif pre_status in [-1, 1, 2, 3]:  # DONE
+        return -1
+    elif pre_status == 0 and sl_c == 0 and et_c == 1 and tp_c == 0 and out_c == 0:  # ETSL
+        return 1
+    elif pre_status == 1 and sl_c == 1:  # LOSE et - sl
+        return 2
+    elif pre_status == 0 and sl_c == 1 and et_c == 1:  # LOSE direct et - sl
+        return 2
+    elif pre_status == 1 and sl_c == 0 and tp_c == 1:  # WIN et - tp
+        return 3
+    else:
+        return np.nan
+
+
+def t_fc_first(sl_c, et_c, tp_c, out_c):
+    if sl_c == 0 and et_c == 0 and tp_c == 0 and out_c == 0:  # STANDBY
+        return 'STANDBY'
+    elif sl_c == 0 and et_c == 0 and out_c == 1:  # OUT
+        return 'OUT'
+    elif et_c == 1:  # ET
+        return 'ET'
+    elif sl_c == 1 and et_c == 1:  # LOSE direct et - sl
+        return 'DIRECT_ETSL'
+    elif sl_c == 1:  # LOSE SL
+        return 'SL'
+    elif et_c == 1 and tp_c == 1:  # WIN direct et - tp
+        return 'DIRECT_ETTP'
+    elif tp_c == 1:  # TP
+        return 'TP'
+    else:
+        return np.nan
+
+
 def test_trade_market_df_apply(symbol, tf, fc, longshort, et_price, sl_price, tp_price, tp_price_w5, w, t_mode, o_his, df_lows_plot, df_highs_plot, wavepatterns, wavepattern_tpsl_l, wave_option_plot_l, wave_opt, ix, df, t_info):
     wavepatterns.add(w)
     # wavepattern_l.append([symbol, fc, ix, w.dates[0], id(w), w])
@@ -1490,10 +1528,27 @@ def test_trade_market_df_apply(symbol, tf, fc, longshort, et_price, sl_price, tp
     position_enter_i = []
     et_orderid_test = randrange(10000000000, 99999999999, 1)
 
+
     if not df_active.empty and df_active.size != 0:
-        df_active['et_cross'] = df_active.apply(lambda x: 1 if x['High'] >= et_price and et_price >= x['Low'] else 0, axis=1)
+        w_start_price = w.values[0]  # wave1
+        w2_price = w.values[3]
+        w_end_price = w.values[-1]  # wave5
+        height_price = abs(w_end_price - w_start_price)
+        o_fibo_value = height_price * o_fibo / 100 if o_fibo else 0
+        out_price = w_end_price + o_fibo_value if longshort else w_end_price - o_fibo_value
+
+        df_active['sl_price'] = sl_price
+        df_active['et_price'] = et_price
+        df_active['tp_price'] = tp_price
+        df_active['out_price'] = out_price
+
         df_active['sl_cross'] = df_active.apply(lambda x: 1 if x['High'] >= sl_price and sl_price >= x['Low'] else 0, axis=1)
+        df_active['et_cross'] = df_active.apply(lambda x: 1 if x['High'] >= et_price and et_price >= x['Low'] else 0, axis=1)
         df_active['tp_cross'] = df_active.apply(lambda x: 1 if x['High'] >= tp_price and tp_price >= x['Low'] else 0, axis=1)
+        df_active['out_cross'] = df_active.apply(lambda x: 1 if x['High'] >= out_price and out_price >= x['Low'] else 0, axis=1)
+        df_active['status'] = 0
+        #t_fc(pre_status, sl_c, et_c, tp_c, out_c)
+        df_active['status'] = df_active.apply(lambda x: t_fc_first(x['sl_cross'], x['et_cross'], x['tp_cross'], x['out_cross']), axis=1)
 
         # cross_count = df_active['cross'].sum(axis=0)
 
