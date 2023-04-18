@@ -443,6 +443,12 @@ def sma_df(df, p):
     return i.df
 
 
+def ichi_df(df):
+    i = Indicators(df)
+    i.ichimoku_kinko_hyo(period_tenkan_sen=9, period_kijun_sen=26, period_senkou_span_b=52, column_name_chikou_span='chikou_span', column_name_tenkan_sen='tenkan_sen', column_name_kijun_sen='kijun_sen', column_name_senkou_span_a='senkou_span_a', column_name_senkou_span_b='senkou_span_b')
+    return i.df
+
+
 def fractals_low_loopA(df, fcnt=None, loop_count=1):
     for c in range(loop_count):
         window = 2 * fcnt + 1
@@ -1032,10 +1038,10 @@ def c_check_valid_wave_in_history(o_his, symbol, tf, fc, wavepattern, et_price, 
                             # and x['timeframe'] == tf
                             # and x['fcnt'] == fc
                             and x['status'] in ['ETSL', 'TP', 'WIN', 'LOSE', 'FORCE']
-                            and x['et_price'] == et_price
-                            and x['sl_price'] == sl_price
+                            # and x['et_price'] == et_price
+                            # and x['sl_price'] == sl_price
                             # and x['tp_price'] == tp_price
-                            and x['tp_price_w5'] == tp_price_w5
+                            # and x['tp_price_w5'] == tp_price_w5
                             # and x['wavepattern'].dates == wavepattern.dates
                             # and x['wavepattern'].values == wavepattern.values
                             ]
@@ -1219,6 +1225,20 @@ def get_sma_n_df(df, n):
     df.reset_index(drop=True, inplace=True)
     return df
 
+
+def c_ichi(df, longshort, wavepattern):
+    w2 = wavepattern.waves['wave2']
+    w2_price = w2.high
+    w2_high_idx = w2.high_idx
+    senkou_span_a = df['senkou_span_a'].iat[w2_high_idx]
+    senkou_span_b = df['senkou_span_b'].iat[w2_high_idx]
+
+    c_ichi = w2_price < senkou_span_a and w2_price < senkou_span_b if longshort else w2_price > senkou_span_a and w2_price > senkou_span_b
+    if c_ichi:
+        return True
+    return False
+
+
 def get_waves(symbol, tf, t_info, t_mode, i=None):
     n = c_sma_n
     if t_mode in ['REAL', 'PAPER']:
@@ -1252,9 +1272,10 @@ def get_waves(symbol, tf, t_info, t_mode, i=None):
     if df is None:
         return
 
-
     if n:
         df = get_sma_n_df(df, n)
+
+    df = ichi_df(df)
 
     try:
         wa = WaveAnalyzer(df=df, verbose=True)
@@ -1322,9 +1343,10 @@ def get_waves(symbol, tf, t_info, t_mode, i=None):
                                     if wavepattern in wavepatterns:
                                         continue
                                     else:
-                                        wave_list.append(
-                                            [symbol, df, tf, fc, longshort, wavepattern, ix, wave_opt, df_lows_plot,
-                                             df_highs_plot])
+                                        if c_ichi(df, longshort, wavepattern):
+                                            wave_list.append(
+                                                [symbol, df, tf, fc, longshort, wavepattern, ix, wave_opt, df_lows_plot,
+                                                 df_highs_plot])
                                         wavepatterns.add(wavepattern)
 
     return wave_list
@@ -1452,7 +1474,7 @@ def real_trade_market_T(symbol, tf, fc, longshort, et_price, sl_price, tp_price,
     return t_info, o_his
 
 
-def t_fc(pre_status, sl_c, et_c, tp_c, out_c):
+def f_trade_status(pre_status, sl_c, et_c, tp_c, out_c):
     if pre_status == 0 and sl_c == 0 and et_c == 0 and tp_c == 0 and out_c == 0:  # STANDBY
         return 0
     elif pre_status == 0 and sl_c == 0 and et_c == 0 and out_c == 1:  # OUT
@@ -1471,23 +1493,432 @@ def t_fc(pre_status, sl_c, et_c, tp_c, out_c):
         return np.nan
 
 
-def t_fc_first(sl_c, et_c, tp_c, out_c):
-    if sl_c == 0 and et_c == 0 and tp_c == 0 and out_c == 0:  # STANDBY
-        return 'STANDBY'
-    elif sl_c == 0 and et_c == 0 and out_c == 1:  # OUT
-        return 'OUT'
-    elif et_c == 1:  # ET
-        return 'ET'
-    elif sl_c == 1 and et_c == 1:  # LOSE direct et - sl
-        return 'DIRECT_ETSL'
-    elif sl_c == 1:  # LOSE SL
-        return 'SL'
-    elif et_c == 1 and tp_c == 1:  # WIN direct et - tp
-        return 'DIRECT_ETTP'
-    elif tp_c == 1:  # TP
-        return 'TP'
-    else:
-        return np.nan
+# https://www.backtrader.com/docu/order/
+# Order.Created, order.Submitted, Order.Partial, order.Accepted,
+# order.Completed, order.Cancelled, order.Margin, Order.Rejected, Order.Expired
+def f_order_status(sl_c, et_c, tp_c, out_c, sub_c, can_c):
+    status_l = list()
+    if sub_c == 1:
+        status_l.append('Submitted')
+    if can_c == 1:
+        status_l.append('Cancelled')
+    if et_c == 1:
+        status_l.append('ET')
+    if tp_c == 1:
+        status_l.append('WIN')
+    if sl_c == 1:
+        status_l.append('LOSE')
+    if out_c == 1:
+        status_l.append('Rejected')
+    return status_l
+
+
+def real_test_trade_df_apply(symbol, tf, fc, longshort, et_price, sl_price, tp_price, tp_price_w5, w, t_mode, o_his, df_lows_plot, df_highs_plot, wavepatterns, wavepattern_tpsl_l, wave_option_plot_l, wave_opt, ix, df, t_info):
+    wavepatterns.add(w)
+    # wavepattern_l.append([symbol, fc, ix, w.dates[0], id(w), w])
+    wave_option_plot_l.append([
+        [str(w.dates[-1])],
+        [w.values[-1]],
+        [str(wave_opt.values)]
+    ])
+
+    w = w
+    t = t_info
+    stats_history = t[0]
+    order_history = t[1]
+    asset_history = t[2]
+    trade_count = t[3]
+    fee_history = t[4]
+    pnl_history = t[5]
+    wavepattern_history = t[6]
+
+    w_start_price = w.values[0]  # wave1
+    w_end_price = w.values[-1]  # wave5
+
+    out_price = None
+
+    qtyrate_k = get_qtyrate_k(t_info, qtyrate)
+
+    # df_raw = df
+    # df = df_raw.dropna()
+
+    # if w.idx_start < df.index[0]:
+    #     return t_info, o_his
+
+    df_active_raw = df[w.idx_end:]  # w5 stick 포함해서 전체 active
+    df_active = df_active_raw.dropna()
+    df_active = df_active_raw
+
+    position_enter_i = []
+    et_orderid_test = randrange(10000000000, 99999999999, 1)
+
+
+    position = False
+    c_profit = False
+    c_stoploss = False
+
+    available, quantity = c_balance_and_calc_quanty(symbol)
+    if available:
+        df_active_with_w5_stick = df[w.idx_end:]
+        c_interset, cross_cnt = c_allowed_intersect_df(df_active_with_w5_stick, et_price, 1)  # w5 stick 포함하여 계산, 1번 초과 제외
+        if not c_interset:
+            return t_info, o_his
+        if cross_cnt <= 1:
+            # check current price
+            c_price = float(api_call('ticker_price', [symbol])['price'])
+            w2_price = w.values[3]
+            c_c_price_position = c_price < et_price and c_price > w2_price if longshort else c_price > et_price and c_price < w2_price
+            if not c_c_price_position:
+                return t_info, o_his
+
+    if not df_active.empty and df_active.size != 0:
+        w_start_price = w.values[0]  # wave1
+        w2_price = w.values[3]
+        w_end_price = w.values[-1]  # wave5
+        height_price = abs(w_end_price - w_start_price)
+        o_fibo_value = height_price * o_fibo / 100 if o_fibo else 0
+
+
+        out_price = w_end_price + o_fibo_value if longshort else w_end_price - o_fibo_value
+        submit_price = et_price + abs(tp_price - et_price)/2 if longshort else et_price - abs(tp_price - et_price)/2
+        cancel_price = tp_price
+
+        df_active['sl_price'] = sl_price
+        df_active['et_price'] = et_price
+        df_active['tp_price'] = tp_price
+        df_active['out_price'] = out_price
+        df_active['sub_price'] = submit_price
+        df_active['can_price'] = cancel_price
+
+        df_active['sl_cross'] = df_active.apply(lambda x: 1 if x['High'] >= sl_price and sl_price >= x['Low'] else 0, axis=1)
+        df_active['et_cross'] = df_active.apply(lambda x: 1 if x['High'] >= et_price and et_price >= x['Low'] else 0, axis=1)
+        df_active['tp_cross'] = df_active.apply(lambda x: 1 if x['High'] >= tp_price and tp_price >= x['Low'] else 0, axis=1)
+        df_active['out_cross'] = df_active.apply(lambda x: 1 if x['High'] >= out_price and out_price >= x['Low'] else 0, axis=1)
+        df_active['sub_cross'] = df_active.apply(lambda x: 1 if x['High'] >= submit_price and submit_price >= x['Low'] else 0, axis=1)
+        df_active['can_cross'] = df_active.apply(lambda x: 1 if x['High'] >= cancel_price and cancel_price >= x['Low'] else 0, axis=1)
+
+        df_active['status_raw'] = df_active.apply(lambda x: f_order_status(x['sl_cross'], x['et_cross'], x['tp_cross'], x['out_cross'], x['sub_cross'], x['can_cross']), axis=1)
+        status_raw_list = df_active['status_raw'].tolist()
+        close_list = df_active['Close'].tolist()
+        et_price_list = df_active['et_price'].tolist()
+        can_price_list = df_active['can_price'].tolist()
+
+        current_action = list()
+        pre_action_list = list()
+        for i, status in enumerate(status_raw_list):
+            # pre_action_list = list(dict.fromkeys(pre_action_list)) #  순서유지
+            if status:
+                if len(pre_action_list) == 0 and len(status) == 3 \
+                        and ('Submitted' in status) and ('Cancelled' in status) and ('WIN' in status):
+                    c_submitted = close_list[i] < can_price_list[i] if longshort else close_list[i] > can_price_list[i]
+                    if c_submitted:
+                        pre_action_list = ['Submitted']
+                        current_action.append('Submitted')
+                    else:
+                        current_action.append(np.nan)
+                elif len(pre_action_list) == 0 and ('Rejected' in status):
+                    current_action.append('Rejected')
+                    for k in status_raw_list[i+1:]:
+                        current_action.append(np.nan)
+                    break
+                elif len(pre_action_list) == 0 and len(status) == 1 and ('Cancelled' in status):
+                    pre_action_list = []
+                    current_action.append(np.nan)
+                elif len(pre_action_list) == 0 and len(status) == 2 and ('Cancelled' in status):
+                    pre_action_list = []
+                    current_action.append(np.nan)
+                elif len(pre_action_list) == 0 and len(status) == 2 and ('Submitted' in status) and ('ET' in status):
+                    pre_action_list = ['Submitted', 'ET']
+                    current_action.append('ET')
+                elif len(pre_action_list) == 0 and len(status) == 1 and ('Submitted' in status):
+                    pre_action_list = ['Submitted']
+                    current_action.append('Submitted')
+                elif len(pre_action_list) == 1 and len(status) == 2 and ('Submitted' in pre_action_list) and ('Cancelled' in status) and ('WIN' in status):
+                    pre_action_list = []
+                    current_action.append(np.nan)
+                elif len(pre_action_list) == 1 and ('ET' in status):
+                    pre_action_list = ['Submitted', 'ET']
+                    current_action.append('ET')
+                elif len(pre_action_list) == 2 and ('WIN' in status):
+                    pre_action_list = ['Submitted', 'ET', 'WIN']
+                    current_action.append('WIN')
+                    for k in status_raw_list[i+1:]:
+                        current_action.append(np.nan)
+                    break
+                elif len(pre_action_list) == 2 and ('LOSE' in status):
+                    pre_action_list = ['Submitted', 'ET', 'LOSE']
+                    current_action.append('LOSE')
+                    for k in status_raw_list[i+1:]:
+                        current_action.append(np.nan)
+                    break
+                else:
+                    current_action.append(np.nan)
+            else:
+                current_action.append(np.nan)
+
+        df_active['action'] = current_action
+        current_action_undupl = list(dict.fromkeys(current_action)) #  순서유지
+
+
+        # status_raw_list_release = list()
+        # for s in status_raw_list:
+        #     for j in s:
+        #         status_raw_list_release.append(j)
+        # status_raw_list_undupl = list(dict.fromkeys(status_raw_list_release)) #  순서유지
+
+
+        # 1
+        # LOSE -->['Submitted', 'Cancelled', 'WIN', 'ET', 'LOSE']
+        # WIN -->['Submitted', 'Cancelled', 'WIN', 'ET', 'LOSE']
+
+        # 2
+        # LOSE -->['Submitted', 'Cancelled', 'ET', 'WIN', 'LOSE']
+        # WIN -->['Submitted', 'Cancelled', 'ET', 'WIN', 'LOSE']
+
+        # if 'LOSE' in status_raw_list_undupl:
+        #     print('LOSE-->' + str(status_raw_list_undupl))
+        # if 'Rejected' in status_raw_list_undupl:
+        #     print('Rejected-->' +str(status_raw_list_undupl))
+        # if 'WIN' in status_raw_list_undupl:
+        #     print('WIN-->' +str(status_raw_list_undupl))
+
+        # if 'Submitted' in current_action_undupl:
+        #     # print(str(current_action_undupl))
+        #     position = True
+        #     c_profit = True
+        #     c_stoploss = False
+        #     if plotview:
+        #         plot_pattern_n(
+        #             symbol + '_' + str(tf) + '_' + str(fc),
+        #             df=df,
+        #             w=w,
+        #             # k=k,
+        #             wave_pattern=wavepattern_tpsl_l,
+        #             df_lows_plot=df_lows_plot,
+        #             df_highs_plot=df_highs_plot,
+        #             trade_info=t_info,
+        #             wave_options=wave_option_plot_l,
+        #             title='APPLY Submitted ' + symbol + ' ' +
+        #                   str([et_price, sl_price, tp_price, tp_price_w5]))
+        #     return trade_info, o_his
+
+        if 'ET' in current_action_undupl:
+            # print(str(current_action_undupl))
+            position = True
+            c_profit = True
+            c_stoploss = False
+            position_enter_i = [symbol, et_price, sl_price, tp_price, 'dates[k]']
+
+            if plotview:
+                plot_pattern_n(df=df,
+                               wave_pattern=[[1, w.dates[0], id(w), w]],
+                               df_lows_plot=df_lows_plot, df_highs_plot=df_highs_plot,
+                               trade_info=None,
+                               title=str(
+                                   t_mode + ' ' + symbol + ' %s ' % str('LONG' if longshort else 'SHORT') + '%sm %s' % (
+                                       tf, fc) + ', ET(APPLY): ' + str(et_price)))
+            return trade_info, o_his
+        if 'WIN' in current_action_undupl:
+            position = True
+            c_profit = True
+            c_stoploss = False
+            position_enter_i = [symbol, et_price, sl_price, tp_price, 'dates[k]']
+
+            # if plotview:
+            #     plot_pattern_n(
+            #         symbol + '_' + str(tf) + '_' + str(fc),
+            #         df=df,
+            #         w=w,
+            #         # k=k,
+            #         wave_pattern=wavepattern_tpsl_l,
+            #         df_lows_plot=df_lows_plot,
+            #         df_highs_plot=df_highs_plot,
+            #         trade_info=t_info,
+            #         wave_options=wave_option_plot_l,
+            #         title='BACKTEST TP/SL ' + str('trade_stats') + ' ' +
+            #               str([et_price, sl_price, tp_price, tp_price_w5]))
+        if 'LOSE' in current_action_undupl:
+            position = True
+            c_profit = False
+            c_stoploss = True
+            position_enter_i = [symbol, et_price, sl_price, tp_price, 'dates[k]']
+
+            # if plotview:
+            #     plot_pattern_n(
+            #         symbol + '_' + str(tf) + '_' + str(fc),
+            #         df=df,
+            #         w=w,
+            #         # k=k,
+            #         wave_pattern=wavepattern_tpsl_l,
+            #         df_lows_plot=df_lows_plot,
+            #         df_highs_plot=df_highs_plot,
+            #         trade_info=t_info,
+            #         wave_options=wave_option_plot_l,
+            #         title='BACKTEST TP/SL ' + str('trade_stats') + ' ' +
+            #               str([et_price, sl_price, tp_price, tp_price_w5]))
+
+    # if position is True:
+    if False:
+        position_enter_i = [symbol, et_price, sl_price, tp_price, 'dates[k]']
+
+        if c_profit or c_stoploss:
+            win_lose_flg = None
+            if t_mode in ['BACKTEST']:
+                r_order, o_his = new_et_order_test(symbol, tf, fc, longshort, qtyrate_k, et_price, sl_price,
+                                                   tp_price, tp_price_w5, 1, w, et_orderid_test, o_his, t_mode)
+
+            fee_limit_tp = 0
+            fee_limit_sl = 0
+            if tp_type == 'maker':
+                fee_limit_tp = fee_limit + fee_tp
+            elif tp_type == 'taker':
+                fee_limit_tp = fee_limit + fee_tp + fee_slippage
+            fee_limit_sl = fee_limit + fee_sl + fee_slippage
+
+            fee_percent = 0
+            pnl_percent = 0
+            win_lose_flg = 0
+            seed_pre = asset_history[-1] if asset_history else seed
+
+            if c_stoploss and c_profit:
+                print('XXXXXXXX XXXXXXXX XXXXXXX')
+
+            if c_stoploss and not c_profit:
+                win_lose_flg = 0
+
+                # https://www.binance.com/en/support/faq/how-to-use-binance-futures-calculator-360036498511
+                pnl_percent = -(abs(sl_price - et_price) / sl_price)         #  PnL  =  (1 - entry price / exit price)
+                fee_percent = fee_limit_sl
+
+                pnl = pnl_percent * seed_pre * qtyrate_k
+                fee = fee_percent * seed_pre * qtyrate_k
+
+                trade_count.append(0)
+                trade_inout_i = [position_enter_i[0],
+                                 position_enter_i[1],
+                                 position_enter_i[2],
+                                 position_enter_i[3],
+                                 position_enter_i[4],' dates[k]',
+                                 longshort, 'LOSE']
+                order_history.append(trade_inout_i)
+                o_his = update_history_status(o_his, symbol, et_orderid_test, 'LOSE')
+
+            if c_profit and not c_stoploss:
+                win_lose_flg = 1
+                pnl_percent = (abs(tp_price - et_price) / tp_price)
+                fee_percent = fee_limit_tp
+
+                pnl = pnl_percent * seed_pre * qtyrate_k
+                fee = fee_percent * seed_pre * qtyrate_k
+
+                trade_count.append(1)
+                trade_inout_i = [position_enter_i[0],
+                                 position_enter_i[1],
+                                 position_enter_i[2],
+                                 position_enter_i[3],
+                                 position_enter_i[4], 'dates[k]',
+                                 longshort, 'WIN']
+                order_history.append(trade_inout_i)
+                o_his = update_history_status(o_his, symbol, et_orderid_test, 'WIN')
+
+
+            if win_lose_flg is not None:
+                asset_new = seed_pre + pnl - fee
+                pnl_history.append(pnl)
+                fee_history.append(fee)
+                asset_history.append(asset_new)
+                wavepattern_history.append(w)
+
+                winrate = (sum(trade_count) / len(trade_count)) * 100
+
+                asset_min = seed
+                asset_max = seed
+
+                if len(stats_history) > 0:
+                    asset_last_min = stats_history[-1][-2]
+                    asset_min = asset_new if asset_new < asset_last_min else asset_last_min
+                    asset_last_max = stats_history[-1][-1]
+                    asset_max = asset_new if asset_new > asset_last_max else asset_last_max
+
+                df_s = pd.DataFrame.from_records(stats_history)
+                b_symbol = abs(tp_price - et_price) / abs(
+                    sl_price - et_price)  # one trade profitlose rate
+
+                b_cum = (df_s[8].sum() + b_symbol) / (
+                        len(df_s) + 1) if len(
+                    stats_history) > 0 else b_symbol  # mean - profitlose rate, df_s[6] b_cum index
+                p_cum = winrate / 100  # win rate
+                q_cum = 1 - p_cum  # lose rate
+                tpi_cum = round(p_cum * (1 + b_cum), 2)  # trading perfomance index
+                f_cum = round(p_cum - (q_cum / b_cum),
+                              2)  # kelly index https://igotit.tistory.com/1526
+
+                f = f_cum
+                tpi = tpi_cum
+                b = b_cum
+
+                if c_kelly_adaptive:
+                    if len(df_s) >= c_kelly_window:
+                        df_s_window = df_s.iloc[-c_kelly_window:]
+                        p = df_s_window[4].sum() / len(df_s_window)
+                        b = (df_s_window[11].sum() + b_symbol) / (len(
+                            df_s_window) + 1)  # mean in kelly window - profitlose rate
+                        q = 1 - p  # lose rate
+                        tpi = round(p * (1 + b),
+                                    2)  # trading perfomance index
+                        f = round(p - (q / b), 2)  # kelly index
+
+                trade_stats = [len(trade_count), round(winrate, 2),
+                               asset_new, symbol, win_lose_flg,
+                               'WIN' if win_lose_flg else 'LOSE', f_cum,
+                               tpi_cum, b_cum, f, tpi, b, b_symbol,
+                               str(qtyrate_k),
+                               str(round(pnl_percent, 4)),
+                               sum(pnl_history), sum(fee_history),
+                               round(asset_min, 2), round(asset_max, 2)]
+                stats_history.append(trade_stats)
+                t_info = [stats_history, order_history,
+                          asset_history, trade_count, fee_history,
+                          pnl_history, wavepattern_history]
+
+                wavepattern_tpsl_l.append(
+                    [ix, w.dates[0], id(w), w])
+
+                s_11 = symbol + '           '
+                trade_in = trade_inout_i[4][2:-3]
+                trade_out = trade_inout_i[5][6:-3]
+
+                trade_stats_print = [len(trade_count), round(winrate, 2),
+                               asset_new, symbol, win_lose_flg,
+                               'WIN' if win_lose_flg else 'LOSE', f_cum,
+                               # tpi_cum, b_cum, f, tpi, b, b_symbol,
+                               str(qtyrate_k),
+                               str(round(pnl_percent, 4)),
+                               sum(pnl_history), sum(fee_history),
+                               round(asset_min, 2), round(asset_max, 2)]
+                logger.info(
+                    '%s %s %s %s x%s %s-%s %s %s %s %s %s %s - %s' % (t_mode[:1] + ' :',
+                        timeframe, s_11[:11], tf, qtyrate_k,
+                        period_days_ago, period_days_ago_till, ' x ' + str(fc),
+                        'L' if longshort else 'S', trade_in, '-',
+                        trade_out, str(trade_stats_print),
+                        str([et_price, sl_price, tp_price, tp_price_w5])))
+
+                if plotview:
+                    plot_pattern_k(
+                        symbol + '_' + str(tf) + '_' + str(fc),
+                        df=df,
+                        w=w,
+                        k=k,
+                        wave_pattern=wavepattern_tpsl_l,
+                        df_lows_plot=df_lows_plot,
+                        df_highs_plot=df_highs_plot,
+                        trade_info=t_info,
+                        wave_options=wave_option_plot_l,
+                        title='BACKTEST TP/SL ' + str(trade_stats) + ' ' +
+                        str([et_price, sl_price, tp_price, tp_price_w5]))
+
+    return t_info, o_his
 
 
 def test_trade_market_df_apply(symbol, tf, fc, longshort, et_price, sl_price, tp_price, tp_price_w5, w, t_mode, o_his, df_lows_plot, df_highs_plot, wavepatterns, wavepattern_tpsl_l, wave_option_plot_l, wave_opt, ix, df, t_info):
@@ -1515,19 +1946,24 @@ def test_trade_market_df_apply(symbol, tf, fc, longshort, et_price, sl_price, tp
     out_price = None
 
     qtyrate_k = get_qtyrate_k(t_info, qtyrate)
-    df_raw = df
 
-    df = df_raw.dropna()
+    # df_raw = df
+    # df = df_raw.dropna()
 
-    if w.idx_start < df.index[0]:
-        return t_info, o_his
+    # if w.idx_start < df.index[0]:
+    #     return t_info, o_his
 
     df_active_raw = df[w.idx_end:]  # w5 stick 포함해서 전체 active
-    df_active = df_active_raw.dropna()
+    # df_active = df_active_raw.dropna()
+    df_active = df_active_raw
 
     position_enter_i = []
     et_orderid_test = randrange(10000000000, 99999999999, 1)
 
+
+    position = False
+    c_profit = False
+    c_stoploss = False
 
     if not df_active.empty and df_active.size != 0:
         w_start_price = w.values[0]  # wave1
@@ -1535,33 +1971,175 @@ def test_trade_market_df_apply(symbol, tf, fc, longshort, et_price, sl_price, tp
         w_end_price = w.values[-1]  # wave5
         height_price = abs(w_end_price - w_start_price)
         o_fibo_value = height_price * o_fibo / 100 if o_fibo else 0
+
+
         out_price = w_end_price + o_fibo_value if longshort else w_end_price - o_fibo_value
+        submit_price = et_price + abs(tp_price - et_price)/2 if longshort else et_price - abs(tp_price - et_price)/2
+        cancel_price = tp_price
 
         df_active['sl_price'] = sl_price
         df_active['et_price'] = et_price
         df_active['tp_price'] = tp_price
         df_active['out_price'] = out_price
+        df_active['sub_price'] = submit_price
+        df_active['can_price'] = cancel_price
 
         df_active['sl_cross'] = df_active.apply(lambda x: 1 if x['High'] >= sl_price and sl_price >= x['Low'] else 0, axis=1)
         df_active['et_cross'] = df_active.apply(lambda x: 1 if x['High'] >= et_price and et_price >= x['Low'] else 0, axis=1)
         df_active['tp_cross'] = df_active.apply(lambda x: 1 if x['High'] >= tp_price and tp_price >= x['Low'] else 0, axis=1)
         df_active['out_cross'] = df_active.apply(lambda x: 1 if x['High'] >= out_price and out_price >= x['Low'] else 0, axis=1)
-        df_active['status'] = 0
-        #t_fc(pre_status, sl_c, et_c, tp_c, out_c)
-        df_active['status'] = df_active.apply(lambda x: t_fc_first(x['sl_cross'], x['et_cross'], x['tp_cross'], x['out_cross']), axis=1)
+        df_active['sub_cross'] = df_active.apply(lambda x: 1 if x['High'] >= submit_price and submit_price >= x['Low'] else 0, axis=1)
+        df_active['can_cross'] = df_active.apply(lambda x: 1 if x['High'] >= cancel_price and cancel_price >= x['Low'] else 0, axis=1)
 
-        # cross_count = df_active['cross'].sum(axis=0)
+        df_active['status_raw'] = df_active.apply(lambda x: f_order_status(x['sl_cross'], x['et_cross'], x['tp_cross'], x['out_cross'], x['sub_cross'], x['can_cross']), axis=1)
+        status_raw_list = df_active['status_raw'].tolist()
 
-    if longshort:
-        pass
+        current_action = list()
+        pre_action_list = list()
+        for i, status in enumerate(status_raw_list):
+            # pre_action_list = list(dict.fromkeys(pre_action_list)) #  순서유지
+            if status:
+                if len(pre_action_list) == 0 and ('Rejected' in status):
+                    current_action.append('Rejected')
+                    for k in status_raw_list[i+1:]:
+                        current_action.append(np.nan)
+                    break
+                elif len(pre_action_list) == 0 and len(status) == 1 and ('Cancelled' in status):
+                    pre_action_list = []
+                    current_action.append(np.nan)
+                elif len(pre_action_list) == 0 and len(status) == 2 and ('Cancelled' in status):
+                    pre_action_list = []
+                    current_action.append(np.nan)
+                elif len(pre_action_list) == 0 and len(status) == 2 and ('Submitted' in status) and ('ET' in status):
+                    pre_action_list = ['Submitted', 'ET']
+                    current_action.append('ET')
+                elif len(pre_action_list) == 0 and len(status) == 1 and ('Submitted' in status):
+                    pre_action_list = ['Submitted']
+                    current_action.append('Submitted')
+                elif len(pre_action_list) == 1 and ('ET' in status):
+                    pre_action_list = ['Submitted', 'ET']
+                    current_action.append('ET')
+                elif len(pre_action_list) == 2 and ('WIN' in status):
+                    pre_action_list = ['Submitted', 'ET', 'WIN']
+                    current_action.append('WIN')
+                    for k in status_raw_list[i+1:]:
+                        current_action.append(np.nan)
+                    break
+                elif len(pre_action_list) == 2 and ('LOSE' in status):
+                    pre_action_list = ['Submitted', 'ET', 'LOSE']
+                    current_action.append('LOSE')
+                    for k in status_raw_list[i+1:]:
+                        current_action.append(np.nan)
+                    break
+                else:
+                    current_action.append(np.nan)
+            else:
+                current_action.append(np.nan)
+
+        df_active['action'] = current_action
+        current_action_undupl = list(dict.fromkeys(current_action)) #  순서유지
 
 
+        # status_raw_list_release = list()
+        # for s in status_raw_list:
+        #     for j in s:
+        #         status_raw_list_release.append(j)
+        # status_raw_list_undupl = list(dict.fromkeys(status_raw_list_release)) #  순서유지
 
-    position = False
-    c_profit = False
-    c_stoploss = False
-    dates = []
+
+        # 1
+        # LOSE -->['Submitted', 'Cancelled', 'WIN', 'ET', 'LOSE']
+        # WIN -->['Submitted', 'Cancelled', 'WIN', 'ET', 'LOSE']
+
+        # 2
+        # LOSE -->['Submitted', 'Cancelled', 'ET', 'WIN', 'LOSE']
+        # WIN -->['Submitted', 'Cancelled', 'ET', 'WIN', 'LOSE']
+
+        # if 'LOSE' in status_raw_list_undupl:
+        #     print('LOSE-->' + str(status_raw_list_undupl))
+        # if 'Rejected' in status_raw_list_undupl:
+        #     print('Rejected-->' +str(status_raw_list_undupl))
+        # if 'WIN' in status_raw_list_undupl:
+        #     print('WIN-->' +str(status_raw_list_undupl))
+
+        # if 'Submitted' in current_action_undupl:
+        #     # print(str(current_action_undupl))
+        #     position = True
+        #     c_profit = True
+        #     c_stoploss = False
+        #     if plotview:
+        #         plot_pattern_n(
+        #             symbol + '_' + str(tf) + '_' + str(fc),
+        #             df=df,
+        #             w=w,
+        #             # k=k,
+        #             wave_pattern=wavepattern_tpsl_l,
+        #             df_lows_plot=df_lows_plot,
+        #             df_highs_plot=df_highs_plot,
+        #             trade_info=t_info,
+        #             wave_options=wave_option_plot_l,
+        #             title='APPLY Submitted ' + symbol + ' ' +
+        #                   str([et_price, sl_price, tp_price, tp_price_w5]))
+        #     return trade_info, o_his
+
+        if 'ET' in current_action_undupl:
+            # print(str(current_action_undupl))
+            position = True
+            c_profit = True
+            c_stoploss = False
+            # if plotview:
+            #     plot_pattern_n(
+            #         symbol + '_' + str(tf) + '_' + str(fc),
+            #         df=df,
+            #         w=w,
+            #         # k=k,
+            #         wave_pattern=wavepattern_tpsl_l,
+            #         df_lows_plot=df_lows_plot,
+            #         df_highs_plot=df_highs_plot,
+            #         trade_info=t_info,
+            #         wave_options=wave_option_plot_l,
+            #         title='APPLY ET ' + symbol + ' ' +
+            #               str([et_price, sl_price, tp_price, tp_price_w5]))
+            # return trade_info, o_his
+        if 'WIN' in current_action_undupl:
+            position = True
+            c_profit = True
+            c_stoploss = False
+            # if plotview:
+            #     plot_pattern_n(
+            #         symbol + '_' + str(tf) + '_' + str(fc),
+            #         df=df,
+            #         w=w,
+            #         # k=k,
+            #         wave_pattern=wavepattern_tpsl_l,
+            #         df_lows_plot=df_lows_plot,
+            #         df_highs_plot=df_highs_plot,
+            #         trade_info=t_info,
+            #         wave_options=wave_option_plot_l,
+            #         title='BACKTEST TP/SL ' + str('trade_stats') + ' ' +
+            #               str([et_price, sl_price, tp_price, tp_price_w5]))
+        if 'LOSE' in current_action_undupl:
+            position = True
+            c_profit = False
+            c_stoploss = True
+            # if plotview:
+            #     plot_pattern_n(
+            #         symbol + '_' + str(tf) + '_' + str(fc),
+            #         df=df,
+            #         w=w,
+            #         # k=k,
+            #         wave_pattern=wavepattern_tpsl_l,
+            #         df_lows_plot=df_lows_plot,
+            #         df_highs_plot=df_highs_plot,
+            #         trade_info=t_info,
+            #         wave_options=wave_option_plot_l,
+            #         title='BACKTEST TP/SL ' + str('trade_stats') + ' ' +
+            #               str([et_price, sl_price, tp_price, tp_price_w5]))
+
     if position is True:
+    # if False:
+        position_enter_i = [symbol, et_price, sl_price, tp_price, 'dates[k]']
+
         if c_profit or c_stoploss:
             win_lose_flg = None
             if t_mode in ['BACKTEST']:
@@ -2294,8 +2872,8 @@ def monitor_wave_and_action(symbol_p, tf_p, t_mode, t_info, o_his, i=None):
             if c_check_valid_wave_in_history(o_his, symbol, tf, fc, w, et_price, sl_price, tp_price, tp_price_w5, t_mode):
                 if check_cons_for_new_etsl_order(o_his, df, symbol, tf, fc, longshort, w, et_price, sl_price, tp_price, tp_price_w5, ix, t_mode, t_info, qtyrate):
                     if t_mode in ['REAL']:
-                        # t_info, o_his = real_trade(symbol, tf, fc, longshort, et_price, sl_price, tp_price, tp_price_w5, w, t_mode, o_his, df_lows_plot, df_highs_plot, df, t_info)
-                        t_info, o_his = real_trade_market_T(symbol, tf, fc, longshort, et_price, sl_price, tp_price, tp_price_w5, w, t_mode, o_his, df_lows_plot, df_highs_plot, wavepatterns, wavepattern_tpsl_l, wave_option_plot_l, wave_opt, ix, df, t_info)
+                        t_info, o_his = real_trade(symbol, tf, fc, longshort, et_price, sl_price, tp_price, tp_price_w5, w, t_mode, o_his, df_lows_plot, df_highs_plot, df, t_info)
+                        # a, b = real_test_trade_df_apply(symbol, tf, fc, longshort, et_price, sl_price, tp_price, tp_price_w5, w, t_mode, o_his, df_lows_plot, df_highs_plot, wavepatterns, wavepattern_tpsl_l, wave_option_plot_l, wave_opt, ix, df, t_info)
 
 
                     elif t_mode in ['PAPER']:
@@ -2482,7 +3060,7 @@ def update_trade_info(t_info, c_profit, c_stoploss, o_his, symbol, h_id):
                                      position_enter_i[1],
                                      position_enter_i[2],
                                      position_enter_i[3],
-                                     position_enter_i[4], dates[k],
+                                     position_enter_i[4], 'dates[k]',
                                      longshort, 'LOSE']
                     order_history.append(trade_inout_i)
 
@@ -2499,7 +3077,7 @@ def update_trade_info(t_info, c_profit, c_stoploss, o_his, symbol, h_id):
                                      position_enter_i[1],
                                      position_enter_i[2],
                                      position_enter_i[3],
-                                     position_enter_i[4], dates[k],
+                                     position_enter_i[4], 'dates[k]',
                                      longshort, 'WIN']
                     order_history.append(trade_inout_i)
 
