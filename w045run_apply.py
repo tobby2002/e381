@@ -1039,7 +1039,7 @@ def c_check_valid_wave_in_history(o_his, symbol, tf, fc, wavepattern, et_price, 
                             # and x['fcnt'] == fc
                             and x['status'] in ['ETSL', 'TP', 'WIN', 'LOSE', 'FORCE']
                             # and x['et_price'] == et_price
-                            # and x['sl_price'] == sl_price
+                            and x['sl_price'] == sl_price
                             # and x['tp_price'] == tp_price
                             # and x['tp_price_w5'] == tp_price_w5
                             # and x['wavepattern'].dates == wavepattern.dates
@@ -1233,7 +1233,7 @@ def c_ichi(df, longshort, wavepattern):
     senkou_span_a = df['senkou_span_a'].iat[w2_high_idx]
     senkou_span_b = df['senkou_span_b'].iat[w2_high_idx]
 
-    c_ichi = w2_price < senkou_span_a and w2_price < senkou_span_b if longshort else w2_price > senkou_span_a and w2_price > senkou_span_b
+    c_ichi = w2_price > senkou_span_a and w2_price > senkou_span_b if longshort else w2_price < senkou_span_a and w2_price < senkou_span_b
     if c_ichi:
         return True
     return False
