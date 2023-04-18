@@ -22,7 +22,7 @@
 
     "_period": ["period_days_ago:30 --> 30 days ago", "period_days_ago_till:0 --> now", "period_interval:1 per 1day_______  \"1m\", \"5m\""],
     "timeframe": ["3m", "15m"],
-    "period_days_ago": 28,
+    "period_days_ago": 5,
     "period_days_ago_till": 0,
     "period_interval": 1,
     "window": 720,
@@ -36,7 +36,7 @@
 
     "_fractal_count": ["/21, 31, 51, 71  fibo:8, 13, /21, 34, 55, 89  ichimoku 9, /17, 26, 37, 43, 52 _____  7, 34, 52 "],
     "_fcnt": [17, 26, 37],
-    "fcnt": [11, 21, 34, 55],
+    "fcnt": [21, 34, 55],
     "loop_count": 1,
     "up_to_count": 3,
     "c_same_date": true,
@@ -49,12 +49,12 @@
     "c_compare_before_fractal_mode": 1,
 
     "c_kelly_adaptive": true,
-    "c_kelly_window": 20,
+    "c_kelly_window": 10,
     "qtyrate": 0.30,
     "krate_max": 0.40,
     "krate_min": 0.20,
 
-    "c_plrate_adaptive": true,
+    "c_plrate_adaptive": false,
     "c_plrate_rate": 0.40,
     "c_plrate_rate_min": 0.15,
 
@@ -92,7 +92,7 @@
     "seed": 100,
     "init_running_trade": false,
     "reset_leverage": false,
-    "trade_mode": "REAL",
+    "trade_mode": "BACKTEST",
     "paper_flg": true
   },
   "basic": {
